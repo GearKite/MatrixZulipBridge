@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "matrixzulipbridge"
+version = "0.1.0"
+description = "A Matrix puppeting bridge for Zulip"
+authors = ["GearKite <emgh@em.id.lv>"]
+license = "AGPL-3.0-or-later"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+zulip = "^0.9"
+python-dotenv = "^1"
+mautrix = "^0.20"
+Markdown = "^3.5"
+emoji = "^2.9"
+markdownify = "^0.11"
+coloredlogs = "^15"
+
+[tool.poetry.group.dev.dependencies]
+black = "^23"
+pylint = "^3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
