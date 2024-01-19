@@ -171,6 +171,17 @@ class BridgeAppService(AppService):
     def is_local(self, mxid: str):
         return mxid.endswith(":" + self.server_name)
 
+    def is_puppet(self, mxid: str) -> bool:
+        """Checks whether a given MXID is our puppet
+
+        Args:
+            mxid (str): Matrix user ID
+
+        Returns:
+            bool:
+        """
+        return mxid.startswith("@" + self.puppet_prefix) and self.is_local(mxid)
+
     def get_mxid_from_zulip_user_id(
         self, organization, zulip_user_id, at=True, server=True
     ):
@@ -734,9 +745,7 @@ class BridgeAppService(AppService):
                     if member.displayname is not None:
                         room.displaynames[user_id] = member.displayname
                     # add to global puppet cache if it's a puppet
-                    if user_id.startswith("@" + self.puppet_prefix) and self.is_local(
-                        user_id
-                    ):
+                    if self.is_puppet(user_id):
                         self._users[user_id] = member.displayname
 
                 # only add valid rooms to event handler

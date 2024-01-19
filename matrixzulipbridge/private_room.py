@@ -240,9 +240,7 @@ class PrivateRoom(Room):
 
         # assuming displayname of a puppet matches nick
         for member in self.members:
-            if not member.startswith(
-                "@" + self.serv.puppet_prefix
-            ) or not member.endswith(":" + self.serv.server_name):
+            if not self.serv.is_puppet(member):
                 continue
 
             if member in self.displaynames:
