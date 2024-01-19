@@ -53,14 +53,14 @@ A Matrix puppeting appservice bridge for Zulip
 ```shell
 usage: python3 -m matrixzulipbridge [-h] [-v] (-c CONFIG | --version) [-l LISTEN_ADDRESS] [-p LISTEN_PORT] [-u UID] [-g GID] [--generate] [--generate-compat] [--reset] [--unsafe-mode] [-o OWNER] [homeserver]
 
-A puppeting Matrix - Zulip appservice bridge (v1.0)
+A puppeting Matrix - Zulip appservice bridge (v0.1.1.dev2+g3ed8ed7)
 
 positional arguments:
   homeserver            URL of Matrix homeserver (default: http://localhost:8008)
 
 options:
   -h, --help            show this help message and exit
-  -v, --verbose         logging verbosity level: once is info, twice is debug (default: 0)
+  -v, --verbose         log debug messages
   -c CONFIG, --config CONFIG
                         registration YAML file path, must be writable if generating (default: None)
   --version             show bridge version
