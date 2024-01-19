@@ -23,7 +23,10 @@ A Matrix puppeting appservice bridge for Zulip
 
 - [Python >=3.10](https://wiki.python.org/moin/BeginnersGuide/Download)
 - Matrix homeserver with ability to add appservices
-- Git (for cloning the repository)
+
+### PyPI
+
+`pip install matrixzulipbridge`
 
 ### From source
 
