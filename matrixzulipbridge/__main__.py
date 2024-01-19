@@ -840,9 +840,9 @@ async def async_main():
     parser.add_argument(
         "-v",
         "--verbose",
-        help="logging verbosity level: once is info, twice is debug",
-        action="count",
-        default=0,
+        help="log debug messages",
+        action="store_true",
+        default=argparse.SUPPRESS,
     )
     req = parser.add_mutually_exclusive_group(required=True)
     req.add_argument(
@@ -907,11 +907,9 @@ async def async_main():
 
     args = parser.parse_args()
 
-    logging_level = logging.WARNING
-    if args.verbose > 0:
-        logging_level = logging.INFO
-        if args.verbose > 1:
-            logging_level = logging.DEBUG
+    logging_level = logging.INFO
+    if "verbose" in args:
+        logging_level = logging.DEBUG
 
     logging.basicConfig(stream=sys.stdout, level=logging_level)
 
