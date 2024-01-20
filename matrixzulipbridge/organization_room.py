@@ -101,6 +101,7 @@ class OrganizationRoom(Room):
     messages: dict[str, str]
     permissions: dict[str, str]
     zulip_handler: "ZulipEventHandler"
+    max_backfill_amount: int
 
     def init(self):
         self.name = None
@@ -154,6 +155,7 @@ class OrganizationRoom(Room):
         self.messages = {}
         self.permissions = {}
         self.zulip_handler = None
+        self.max_backfill_amount = 100
 
         cmd = CommandParser(
             prog="FULLNAME",
@@ -266,6 +268,16 @@ class OrganizationRoom(Room):
         )
         self.commands.register(cmd, self.cmd_status)
 
+        cmd = CommandParser(
+            prog="BACKFILL",
+            description="set the default maximum amount of backfilled messages (0 to disable backfilling)",
+        )
+        cmd.add_argument("amount", nargs="?", help="new amount")
+        cmd.add_argument(
+            "--update", action="store_true", help="also set this to all existing rooms"
+        )
+        self.commands.register(cmd, self.cmd_backfill)
+
         self.mx_register("m.room.message", self.on_mx_message)
 
     @staticmethod
@@ -308,6 +320,9 @@ class OrganizationRoom(Room):
         if "messages" in config and config["messages"]:
             self.messages = config["messages"]
 
+        if "max_backfill_amount" in config and config["max_backfill_amount"]:
+            self.max_backfill_amount = config["max_backfill_amount"]
+
     def to_config(self) -> dict:
         return {
             "name": self.name,
@@ -315,6 +330,7 @@ class OrganizationRoom(Room):
             "email": self.email,
             "site": self.site,
             "messages": self.messages,
+            "max_backfill_amount": self.max_backfill_amount,
         }
 
     def is_valid(self) -> bool:
@@ -572,6 +588,24 @@ class OrganizationRoom(Room):
     async def cmd_syncpermissions(self, _args) -> None:
         await self._sync_permissions()
         self.send_notice("Permissions synched successfully")
+
+    async def cmd_backfill(self, args) -> None:
+        if args.amount:
+            self.max_backfill_amount = int(args.amount)
+            await self.save()
+        if args.update:
+            for room in self.rooms.values():
+                if not isinstance(room, PrivateRoom):
+                    continue
+                room.max_backfill_amount = self.max_backfill_amount
+                await room.save()
+            self.send_notice(
+                f"Set maximum backfill amount to {self.max_backfill_amount} and updated all rooms"
+            )
+        else:
+            self.send_notice(
+                f"Maximum backfill amount is set to: {self.max_backfill_amount}"
+            )
 
     async def connect(self) -> None:
         if not self.is_valid():

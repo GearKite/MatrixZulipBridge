@@ -189,6 +189,7 @@ class StreamRoom(PrivateRoom):
         room.organization = organization
         room.organization_id = organization.id
         room.organization_name = organization.name
+        room.max_backfill_amount = organization.max_backfill_amount
 
         result = organization.zulip.get_stream_id(name)
         room.stream_id = result.get("stream_id")

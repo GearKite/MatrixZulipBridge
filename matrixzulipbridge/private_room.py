@@ -86,13 +86,20 @@ class PrivateRoom(Room):
         self.organization_name = None  # deprecated
         self.media = []
         self.lazy_members = {}  # allow lazy joining your own ghost for echo
-        self.max_backfill_amount = 100
+        self.max_backfill_amount = None
 
         self.commands = CommandManager()
 
         if type(self) == PrivateRoom:
             cmd = CommandParser(prog="WHOIS", description="WHOIS the other user")
             self.commands.register(cmd, self.cmd_whois)
+
+        cmd = CommandParser(
+            prog="BACKFILL",
+            description="set the maximum amount of backfilled messages (0 to disable backfilling)",
+        )
+        cmd.add_argument("amount", nargs="?", help="new amount")
+        self.commands.register(cmd, self.cmd_backfill)
 
         self.mx_register("m.room.message", self.on_mx_message)
         self.mx_register("m.room.redaction", self.on_mx_redaction)
@@ -376,6 +383,14 @@ class PrivateRoom(Room):
     @connected
     async def cmd_whois(self, _args) -> None:
         self.organization.conn.whois(f"{self.name} {self.name}")
+
+    async def cmd_backfill(self, args) -> None:
+        if args.amount:
+            self.max_backfill_amount = int(args.amount)
+            await self.save()
+        self.send_notice(
+            f"Maximum backfill amount is set to: {self.max_backfill_amount}"
+        )
 
     async def _attach_space_internal(self) -> None:
         await self.az.intent.send_state_event(
