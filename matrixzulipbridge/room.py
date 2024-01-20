@@ -51,6 +51,7 @@ class Room(ABC):
     displaynames: dict[str, str]
     thread_last_message: dict[str, str]
     threads: dict[str, str]
+    send_read_receipt: bool
 
     _mx_handlers: dict[str, list[Callable[[dict], bool]]]
     _queue: EventQueue
@@ -73,6 +74,7 @@ class Room(ABC):
         self.last_messages = defaultdict(str)
         self.thread_last_message = {}
         self.threads = {}
+        self.send_read_receipt = True
 
         self._mx_handlers = {}
         self._queue = EventQueue(self._flush_events)
@@ -97,6 +99,9 @@ class Room(ABC):
         if "threads" in config:
             self.threads = config["threads"]
 
+        if "send_read_receipt" in config:
+            self.send_read_receipt = config["send_read_receipt"]
+
     def init(self) -> None:
         pass
 
@@ -107,7 +112,7 @@ class Room(ABC):
         self._queue.stop()
 
     def to_config(self) -> dict:
-        return {"threads": self.threads}
+        return {"threads": self.threads, "send_read_receipt": self.send_read_receipt}
 
     async def save(self) -> None:
         config = self.to_config()
@@ -307,6 +312,17 @@ class Room(ABC):
                                 bridge_data["zulip_message_id"]
                             ] = event_id
                             await self.organization.save()
+
+                            if self.send_read_receipt:
+                                # Send read receipt to Zulip
+                                self.organization.zulip.update_message_flags(
+                                    {
+                                        "messages": [bridge_data["zulip_message_id"]],
+                                        "op": "add",
+                                        "flag": "read",
+                                    }
+                                )
+
                         case "topic":
                             self.threads[bridge_data["zulip_topic"]] = event_id
                             await self.save()
