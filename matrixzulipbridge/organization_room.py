@@ -24,11 +24,9 @@
 import argparse
 import asyncio
 import datetime
-import hashlib
 import html
 import logging
 from argparse import Namespace
-from base64 import b32encode
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 import json

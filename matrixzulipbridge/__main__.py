@@ -47,8 +47,6 @@ from mautrix.errors import MatrixRequestError
 from mautrix.errors import MForbidden
 from mautrix.errors import MUserInUse
 from mautrix.errors import MNotFound
-from mautrix.types import EventType
-from mautrix.types import JoinRule
 from mautrix.types import Membership
 from mautrix.util.bridge_state import BridgeState
 from mautrix.util.bridge_state import BridgeStateEvent

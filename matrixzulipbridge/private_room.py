@@ -22,11 +22,8 @@
 #
 #
 import asyncio
-import html
 import logging
 import re
-from datetime import datetime
-from datetime import timezone
 from typing import Optional
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
