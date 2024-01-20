@@ -20,6 +20,10 @@ ruamel-yaml = "^0.18.5"
 [tool.poetry.group.dev.dependencies]
 black = "^23"
 pylint = "^3"
+isort = "^5.13.2"
+
+[tool.isort]
+profile = "black"
 
 [build-system]
 requires = ["poetry-core"]
