@@ -31,6 +31,7 @@ from typing import Optional
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 from markdownify import markdownify
+from bs4 import BeautifulSoup
 
 from mautrix.api import Method
 from mautrix.api import SynapseAdminPath
@@ -255,7 +256,40 @@ class PrivateRoom(Room):
         content = event.content
 
         if content.formatted_body:
-            message = markdownify(content.formatted_body)
+            message = content.formatted_body
+
+            if "m.mentions" in content:
+                mentioned_users: list[str] = event.content["m.mentions"].get(
+                    "user_ids", []
+                )
+                soup = BeautifulSoup(content.formatted_body, features="html.parser")
+                for mxid in mentioned_users:
+                    # Translate puppet mentions as native Zulip mentions
+                    if not self.serv.is_puppet(mxid):
+                        continue
+
+                    user_id = self.organization.get_zulip_user_id_from_mxid(mxid)
+                    zulip_user = self.organization.get_zulip_user(user_id)
+
+                    # Replace matrix.to links with Zulip mentions
+                    mentions = soup.find_all(
+                        "a",
+                        href=f"https://matrix.to/#/{mxid}",
+                    )
+
+                    zulip_mention = soup.new_tag("span")
+                    zulip_mention.string = " @"
+                    zulip_mention_content = soup.new_tag("strong")
+                    zulip_mention_content.string = (
+                        f"{zulip_user['full_name']}|{user_id}"
+                    )
+                    zulip_mention.append(zulip_mention_content)
+
+                    for mention in mentions:
+                        mention.replace_with(zulip_mention)
+                message = soup.encode(formatter="html5")
+
+            message = markdownify(message)
         elif content.body:
             message = content.body
         else:
