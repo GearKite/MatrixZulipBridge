@@ -373,13 +373,7 @@ class StreamRoom(PrivateRoom):
         # Reply in thread
         if thread_id is not None:
             thread_event = await self.az.intent.get_event(self.id, thread_id)
-            if "lv.shema.zulipbridge" in thread_event.content.unrecognized_:
-                topic = thread_event.content.unrecognized_["lv.shema.zulipbridge"].get(
-                    "zulip_topic"
-                )
-            # Use body as topic name
-            if not topic:
-                topic = thread_event.content.body
+            topic = thread_event.content.body
 
             # Save last thread event for old clients
             self.thread_last_message[thread_event.event_id] = event.event_id
