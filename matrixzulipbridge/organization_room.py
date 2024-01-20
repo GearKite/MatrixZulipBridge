@@ -98,8 +98,9 @@ class OrganizationRoom(Room):
     organization: Any
 
     profile: dict
-    messages: dict[int, str]
+    messages: dict[str, str]
     permissions: dict[str, str]
+    zulip_handler: "ZulipEventHandler"
 
     def init(self):
         self.name = None
@@ -152,6 +153,7 @@ class OrganizationRoom(Room):
         self.profile = None
         self.messages = {}
         self.permissions = {}
+        self.zulip_handler = None
 
         cmd = CommandParser(
             prog="FULLNAME",
@@ -663,14 +665,14 @@ class OrganizationRoom(Room):
 
                 self.profile = self.zulip.get_profile()
 
-                zulip_handler = ZulipEventHandler(self)
+                self.zulip_handler = ZulipEventHandler(self)
 
                 # Start Zulip event listerner
                 asyncio.get_running_loop().run_in_executor(
                     None,
                     functools.partial(
                         self.zulip.call_on_each_event,
-                        lambda event: zulip_handler.on_event(  # pylint: disable=unnecessary-lambda
+                        lambda event: self.zulip_handler.on_event(  # pylint: disable=unnecessary-lambda
                             event
                         ),
                         apply_markdown=True,
@@ -777,6 +779,7 @@ class OrganizationRoom(Room):
     async def _on_connect(self):
         await self._sync_permissions()
         await self._sync_all_room_members()
+        await self.backfill_messages()
 
     async def _sync_permissions(self):
         # Owner should have the highest permissions (after bot)
@@ -823,3 +826,10 @@ class OrganizationRoom(Room):
             mxid,
         )
         return ret.group(1)
+
+    async def backfill_messages(self):
+        for room in self.rooms.values():
+            if room.max_backfill_amount == 0:
+                continue
+            if isinstance(room, StreamRoom):
+                await room.backfill_messages()

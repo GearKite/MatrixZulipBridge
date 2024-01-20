@@ -574,3 +574,23 @@ class StreamRoom(PrivateRoom):
 
         for mx_user_id in to_remove:
             self._remove_puppet(mx_user_id, "Unsubcribed from stream")
+
+    async def backfill_messages(self):
+        request = {
+            "anchor": "newest",
+            "num_before": self.max_backfill_amount,
+            "num_after": 0,
+            "narrow": [
+                {"operator": "stream", "operand": self.stream_id},
+            ],
+        }
+        result = self.organization.zulip.get_messages(request)
+
+        if result["result"] != "success":
+            logging.error(f"Failed getting Zulip messages: {result['msg']}")
+            return
+
+        for message in result["messages"]:
+            if str(message["id"]) in self.organization.messages:
+                continue
+            self.organization.zulip_handler.backfill_message(message)

@@ -73,6 +73,7 @@ class PrivateRoom(Room):
     organization_id: str
     organization_name: Optional[str]
     media: list[list[str]]
+    max_backfill_amount: int
 
     force_forward = False
 
@@ -85,6 +86,7 @@ class PrivateRoom(Room):
         self.organization_name = None  # deprecated
         self.media = []
         self.lazy_members = {}  # allow lazy joining your own ghost for echo
+        self.max_backfill_amount = 100
 
         self.commands = CommandManager()
 
@@ -118,6 +120,9 @@ class PrivateRoom(Room):
                 "No organization or organization_id key in config for PrivateRoom"
             )
 
+        if "max_backfill_amount" in config:
+            self.max_backfill_amount = config["max_backfill_amount"]
+
     def to_config(self) -> dict:
         return {
             **(super().to_config()),
@@ -125,6 +130,7 @@ class PrivateRoom(Room):
             "organization": self.organization_name,
             "organization_id": self.organization_id,
             "media": self.media[:5],
+            "max_backfill_amount": self.max_backfill_amount,
         }
 
     @staticmethod

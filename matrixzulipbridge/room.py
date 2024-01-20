@@ -293,9 +293,16 @@ class Room(ABC):
                     # This saves a few bytes!
                     event["content"].pop("lv.shema.zulipbridge", None)
 
+                    timestamp = None
+                    if "timestamp" in bridge_data:
+                        timestamp = bridge_data["timestamp"] * 1000
+
                     event_type = EventType.find(event["type"])
                     event_id = await intent.send_message_event(
-                        self.id, event_type, event["content"]
+                        self.id,
+                        event_type,
+                        event["content"],
+                        timestamp=timestamp,
                     )
                     if (
                         "m.relates_to" in event["content"]
@@ -309,7 +316,7 @@ class Room(ABC):
                         case "message":
                             # Is this efficient?
                             self.organization.messages[
-                                bridge_data["zulip_message_id"]
+                                str(bridge_data["zulip_message_id"])
                             ] = event_id
                             await self.organization.save()
 

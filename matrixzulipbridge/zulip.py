@@ -40,7 +40,7 @@ class ZulipEventHandler:
     def on_event(self, event: dict):
         match event["type"]:
             case "message":
-                self._handle_message(event)
+                self._handle_message(event["message"])
             case "subscription":
                 self._handle_subscription(event)
             case "reaction":
@@ -52,14 +52,17 @@ class ZulipEventHandler:
             case _:
                 logging.debug(f"Unhandled event type: {event['type']}")
 
+    def backfill_message(self, message: dict):
+        self._handle_message(message)
+
     def _handle_message(self, event: dict):
-        zulip_user_id = event["message"]["sender_id"]
+        zulip_user_id = event["sender_id"]
         if zulip_user_id == self.organization.profile["user_id"]:
             return  # Ignore own messages
-        if "stream_id" not in event["message"]:
+        if "stream_id" not in event:
             return  # Ignore DMs
 
-        room = self._get_room_by_stream_id(event["message"]["stream_id"])
+        room = self._get_room_by_stream_id(event["stream_id"])
 
         if not room:
             logging.debug(
@@ -71,19 +74,20 @@ class ZulipEventHandler:
             self.organization, zulip_user_id
         )
 
-        formatted_message: str = event["message"]["content"]
+        formatted_message: str = event["content"]
         formatted_message = emoji.emojize(formatted_message, language="alias")
 
         message = markdownify(formatted_message).rstrip()
 
-        topic = event["message"]["subject"]
+        topic = event["subject"]
 
         custom_data = {
             "zulip_topic": topic,
             "zulip_user_id": zulip_user_id,
-            "display_name": event["message"]["sender_full_name"],
-            "zulip_message_id": event["message"]["id"],
+            "display_name": event["sender_full_name"],
+            "zulip_message_id": event["id"],
             "type": "message",
+            "timestamp": event["timestamp"],
         }
 
         room.send_message(
@@ -110,7 +114,7 @@ class ZulipEventHandler:
             return
         room = self._get_room_by_stream_id(event["stream_id"])
         room.redact(message_mxid, reason="Deleted on Zulip")
-        del self.organization.messages[event["message_id"]]
+        del self.organization.messages[str(event["message_id"])]
 
     def _handle_subscription(self, event: dict):
         if not "stream_ids" in event:
@@ -140,9 +144,9 @@ class ZulipEventHandler:
                 return
             self.organization.zulip_users[user_id] |= event["person"]
 
-    def _get_mxid_from_zulip_id(self, zulip_id: int):
+    def _get_mxid_from_zulip_id(self, zulip_id: int | str):
         try:
-            return self.organization.messages[zulip_id]
+            return self.organization.messages[str(zulip_id)]
         except KeyError:
             logging.debug(
                 f"Message with Zulip ID {zulip_id} not found, it probably wasn't sent to Matrix"
