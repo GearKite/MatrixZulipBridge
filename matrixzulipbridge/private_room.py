@@ -44,7 +44,7 @@ from matrixzulipbridge.command_parse import (
     CommandParser,
     CommandParserError,
 )
-from matrixzulipbridge.room import Room
+from matrixzulipbridge.room import InvalidConfigError, Room
 
 if TYPE_CHECKING:
     from matrixzulipbridge.organization_room import OrganizationRoom
@@ -90,7 +90,7 @@ class PrivateRoom(Room):
 
         self.commands = CommandManager()
 
-        if type(self) == PrivateRoom:
+        if isinstance(self, PrivateRoom):
             cmd = CommandParser(prog="WHOIS", description="WHOIS the other user")
             self.commands.register(cmd, self.cmd_whois)
 
@@ -108,7 +108,7 @@ class PrivateRoom(Room):
         super().from_config(config)
 
         if "name" not in config:
-            raise Exception("No name key in config for ChatRoom")
+            raise InvalidConfigError("No name key in config for ChatRoom")
 
         self.name = config["name"]
 
@@ -123,7 +123,7 @@ class PrivateRoom(Room):
             self.organization_name = config["organization"]
 
         if self.organization_name is None and self.organization_id is None:
-            raise Exception(
+            raise InvalidConfigError(
                 "No organization or organization_id key in config for PrivateRoom"
             )
 
