@@ -502,7 +502,7 @@ class StreamRoom(PrivateRoom):
         if zulip_user_id == self.organization.profile["user_id"]:
             return
         if zulip_user is None:
-            zulip_user = self.organization.zulip.get_user_by_id(zulip_user_id)["user"]
+            zulip_user = self.organization.get_zulip_user(zulip_user_id)
 
         # ensure, append, invite and join
         self._add_puppet(zulip_user)
@@ -568,12 +568,9 @@ class StreamRoom(PrivateRoom):
             to_remove.remove(self.user_id)
 
         for mx_user_id, zulip_user_id in to_add:
-            result = self.organization.zulip.get_user_by_id(zulip_user_id)
-            if result["result"] != "success":
-                logging.error(f"Could not get user {zulip_user_id}: {result['msg']}")
-                continue
+            zulip_user = self.organization.get_zulip_user(zulip_user_id)
 
-            self._add_puppet(result["user"])
+            self._add_puppet(zulip_user)
 
         for mx_user_id in to_remove:
             self._remove_puppet(mx_user_id, "Unsubcribed from stream")

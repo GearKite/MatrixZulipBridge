@@ -216,7 +216,11 @@ class BridgeAppService(AppService):
         )
 
     async def ensure_zulip_user_id(
-        self, organization, zulip_user_id=None, update_cache=True, zulip_user=None
+        self,
+        organization: "OrganizationRoom",
+        zulip_user_id=None,
+        update_cache=True,
+        zulip_user=None,
     ):
         if zulip_user_id is None:
             zulip_user_id = zulip_user["user_id"]
@@ -229,7 +233,7 @@ class BridgeAppService(AppService):
 
         # always ensure the displayname is up-to-date
         if update_cache:
-            zulip_user = organization.zulip.get_user_by_id(zulip_user_id)["user"]
+            zulip_user = organization.get_zulip_user(zulip_user_id)
             await self.cache_user(mx_user_id, zulip_user["full_name"])
 
         return mx_user_id
