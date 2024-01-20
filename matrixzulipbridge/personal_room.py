@@ -22,8 +22,7 @@
 #
 #
 from matrixzulipbridge import __version__
-from matrixzulipbridge.command_parse import CommandManager
-from matrixzulipbridge.command_parse import CommandParserError
+from matrixzulipbridge.command_parse import CommandManager, CommandParserError
 from matrixzulipbridge.room import Room
 
 

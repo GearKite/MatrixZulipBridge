@@ -22,14 +22,15 @@
 #
 #
 import logging
-from typing import TYPE_CHECKING, Optional
 import re
-import markdown
+from typing import TYPE_CHECKING, Optional
+
 import emoji
+import markdown
 
 if TYPE_CHECKING:
-    from matrixzulipbridge.stream_room import StreamRoom
     from matrixzulipbridge.organization_room import OrganizationRoom
+    from matrixzulipbridge.stream_room import StreamRoom
 
 
 class ZulipEventHandler:

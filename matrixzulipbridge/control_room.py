@@ -29,9 +29,11 @@ from urllib.parse import urlparse
 from mautrix.errors import MatrixRequestError
 
 from matrixzulipbridge import __version__
-from matrixzulipbridge.command_parse import CommandManager
-from matrixzulipbridge.command_parse import CommandParser
-from matrixzulipbridge.command_parse import CommandParserError
+from matrixzulipbridge.command_parse import (
+    CommandManager,
+    CommandParser,
+    CommandParserError,
+)
 from matrixzulipbridge.organization_room import OrganizationRoom
 from matrixzulipbridge.room import Room
 

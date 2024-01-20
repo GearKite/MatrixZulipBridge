@@ -22,16 +22,15 @@
 #
 #
 import logging
-from abc import ABC
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from mautrix.api import Method
-from mautrix.api import Path
+from mautrix.api import Method, Path
 from mautrix.errors import MNotFound
 
 if TYPE_CHECKING:
     from mautrix.appservice import AppService as MauService
+
     from matrixzulipbridge.room import Room
 
 

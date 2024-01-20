@@ -25,8 +25,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from mautrix.api import Method
-from mautrix.api import Path
+from mautrix.api import Method, Path
 from mautrix.types import SpaceChildStateEventContent
 from mautrix.types.event.type import EventType
 

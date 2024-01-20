@@ -35,33 +35,30 @@ import urllib
 from fnmatch import fnmatch
 from typing import Optional
 
-from mautrix.api import HTTPAPI
-from mautrix.api import Method
-from mautrix.api import Path
-from mautrix.api import SynapseAdminPath
+from mautrix.api import HTTPAPI, Method, Path, SynapseAdminPath
 from mautrix.appservice import AppService as MauService
 from mautrix.appservice.state_store import ASStateStore
 from mautrix.client.state_store.memory import MemoryStateStore
-from mautrix.errors import MatrixConnectionError
-from mautrix.errors import MatrixRequestError
-from mautrix.errors import MForbidden
-from mautrix.errors import MUserInUse
-from mautrix.errors import MNotFound
+from mautrix.errors import (
+    MatrixConnectionError,
+    MatrixRequestError,
+    MForbidden,
+    MNotFound,
+    MUserInUse,
+)
 from mautrix.types import Membership
-from mautrix.util.bridge_state import BridgeState
-from mautrix.util.bridge_state import BridgeStateEvent
+from mautrix.util.bridge_state import BridgeState, BridgeStateEvent
 from mautrix.util.config import yaml
 
 from matrixzulipbridge import __version__
 from matrixzulipbridge.appservice import AppService
-from matrixzulipbridge.stream_room import StreamRoom
 from matrixzulipbridge.control_room import ControlRoom
-from matrixzulipbridge.personal_room import PersonalRoom
 from matrixzulipbridge.organization_room import OrganizationRoom
+from matrixzulipbridge.personal_room import PersonalRoom
 from matrixzulipbridge.private_room import PrivateRoom
-from matrixzulipbridge.room import Room
-from matrixzulipbridge.room import RoomInvalidError
+from matrixzulipbridge.room import Room, RoomInvalidError
 from matrixzulipbridge.space_room import SpaceRoom
+from matrixzulipbridge.stream_room import StreamRoom
 from matrixzulipbridge.websocket import AppserviceWebsocket
 
 try:  # Optionally load coloredlogs

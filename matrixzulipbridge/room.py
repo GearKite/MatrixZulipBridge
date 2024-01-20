@@ -25,13 +25,12 @@ import logging
 import re
 from abc import ABC
 from collections import defaultdict
-from typing import Callable
-from typing import Optional
+from typing import Callable, Optional
 
 from mautrix.appservice import AppService as MauService
+from mautrix.errors.base import IntentError
 from mautrix.types import Membership
 from mautrix.types.event.type import EventType
-from mautrix.errors.base import IntentError
 
 from matrixzulipbridge.appservice import AppService
 from matrixzulipbridge.event_queue import EventQueue

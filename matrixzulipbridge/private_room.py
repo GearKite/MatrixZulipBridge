@@ -24,24 +24,26 @@
 import asyncio
 import logging
 import re
-from typing import Optional
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from urllib.parse import urlparse
-from markdownify import markdownify
-from bs4 import BeautifulSoup
 
-from mautrix.api import Method
-from mautrix.api import SynapseAdminPath
+from bs4 import BeautifulSoup
+from markdownify import markdownify
+from mautrix.api import Method, SynapseAdminPath
 from mautrix.errors import MatrixStandardRequestError
-from mautrix.types.event.state import JoinRestriction
-from mautrix.types.event.state import JoinRestrictionType
-from mautrix.types.event.state import JoinRule
-from mautrix.types.event.state import JoinRulesStateEventContent
+from mautrix.types.event.state import (
+    JoinRestriction,
+    JoinRestrictionType,
+    JoinRule,
+    JoinRulesStateEventContent,
+)
 from mautrix.types.event.type import EventType
 
-from matrixzulipbridge.command_parse import CommandManager
-from matrixzulipbridge.command_parse import CommandParser
-from matrixzulipbridge.command_parse import CommandParserError
+from matrixzulipbridge.command_parse import (
+    CommandManager,
+    CommandParser,
+    CommandParserError,
+)
 from matrixzulipbridge.room import Room
 
 if TYPE_CHECKING:

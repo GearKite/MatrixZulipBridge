@@ -24,8 +24,7 @@
 import asyncio
 import logging
 import re
-from typing import Optional
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from mautrix.types import MessageType
 

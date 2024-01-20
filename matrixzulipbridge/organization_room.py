@@ -25,24 +25,26 @@ import argparse
 import asyncio
 import datetime
 import html
+import json
 import logging
+import re
 from argparse import Namespace
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
-import json
-import zulip
-import re
 
+import zulip
 from mautrix.util.bridge_state import BridgeStateEvent
 
 from matrixzulipbridge import __version__
-from matrixzulipbridge.stream_room import StreamRoom
-from matrixzulipbridge.command_parse import CommandManager
-from matrixzulipbridge.command_parse import CommandParser
-from matrixzulipbridge.command_parse import CommandParserError
+from matrixzulipbridge.command_parse import (
+    CommandManager,
+    CommandParser,
+    CommandParserError,
+)
 from matrixzulipbridge.private_room import PrivateRoom
 from matrixzulipbridge.room import Room
 from matrixzulipbridge.space_room import SpaceRoom
+from matrixzulipbridge.stream_room import StreamRoom
 from matrixzulipbridge.zulip import ZulipEventHandler
 
 if TYPE_CHECKING:
