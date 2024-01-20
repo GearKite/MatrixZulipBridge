@@ -2,6 +2,8 @@
 
 A Matrix puppeting appservice bridge for Zulip
 
+Join the Matrix room [#MatrixZulipBridge:shema.lv](https://matrix.to/#/#matrixzulipbridge:shema.lv) if you have any questions or just want to chat.
+
 ## Features
 
 - [x] Streams
