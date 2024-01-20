@@ -448,7 +448,8 @@ class OrganizationRoom(Room):
                 return
 
         self.zulip.add_subscriptions([{"name": stream}])
-        await StreamRoom.create(organization=self, name=stream)
+        room = await StreamRoom.create(organization=self, name=stream)
+        await room.backfill_messages()
 
     @connected
     async def cmd_unsubscribe(self, args) -> None:
