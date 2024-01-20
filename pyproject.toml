@@ -21,6 +21,7 @@ ruamel-yaml = "^0.18.5"
 black = "^23"
 pylint = "^3"
 isort = "^5.13.2"
+pre-commit = "^3.6.0"
 
 [tool.isort]
 profile = "black"
