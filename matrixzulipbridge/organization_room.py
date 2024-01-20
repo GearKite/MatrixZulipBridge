@@ -33,6 +33,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 import json
 import zulip
+import re
 
 from mautrix.util.bridge_state import BridgeStateEvent
 
@@ -811,3 +812,10 @@ class OrganizationRoom(Room):
                 raise Exception(f"Could not get Zulip user {user_id}: {result['msg']}")
             self.zulip_users[user_id] = result["user"]
         return self.zulip_users[user_id]
+
+    def get_zulip_user_id_from_mxid(self, mxid: str) -> int:
+        ret = re.search(
+            rf"@{self.serv.puppet_prefix}.*{self.serv.puppet_separator}{self.name}:{self.serv.server_name}",
+            mxid,
+        )
+        return int(ret.group(1))
