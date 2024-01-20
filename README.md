@@ -1,5 +1,9 @@
 # MatrixZulipBridge
 
+![Tests](https://github.com/GearKite/MatrixZulipBridge/actions/workflows/tests.yml/badge.svg)
+![PyPI version](https://img.shields.io/pypi/v/matrixzulipbridge.svg)
+![Python versions](https://img.shields.io/pypi/pyversions/matrixzulipbridge.svg)
+
 A Matrix puppeting appservice bridge for Zulip
 
 Join the Matrix room [#MatrixZulipBridge:shema.lv](https://matrix.to/#/#matrixzulipbridge:shema.lv) if you have any questions or just want to chat.
