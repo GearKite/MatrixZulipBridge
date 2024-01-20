@@ -40,6 +40,10 @@ class RoomInvalidError(Exception):
     pass
 
 
+class InvalidConfigError(Exception):
+    pass
+
+
 class Room(ABC):
     az: MauService
     id: str
