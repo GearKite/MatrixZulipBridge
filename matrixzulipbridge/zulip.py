@@ -26,7 +26,7 @@ import re
 from typing import TYPE_CHECKING, Optional
 
 import emoji
-import markdown
+from markdownify import markdownify
 
 if TYPE_CHECKING:
     from matrixzulipbridge.organization_room import OrganizationRoom
@@ -71,14 +71,10 @@ class ZulipEventHandler:
             self.organization, zulip_user_id
         )
 
-        message: str = event["message"]["content"]
-        message = emoji.emojize(message, language="alias")
-        formatted_message = markdown.markdown(message)
+        formatted_message: str = event["message"]["content"]
+        formatted_message = emoji.emojize(formatted_message, language="alias")
 
-        # Check if formatting does anything (there has to be a better way)
-        if re.sub(r"<p>|</p>", "", formatted_message) == message:
-            # Don't include formatted message if it's pointless
-            formatted_message = None
+        message = markdownify(formatted_message).rstrip()
 
         topic = event["message"]["subject"]
 

@@ -24,6 +24,7 @@
 import argparse
 import asyncio
 import datetime
+import functools
 import html
 import json
 import logging
@@ -667,10 +668,13 @@ class OrganizationRoom(Room):
                 # Start Zulip event listerner
                 asyncio.get_running_loop().run_in_executor(
                     None,
-                    self.zulip.call_on_each_event,
-                    lambda event: zulip_handler.on_event(
-                        event
-                    ),  # pylint: disable=unnecessary-lambda
+                    functools.partial(
+                        self.zulip.call_on_each_event,
+                        lambda event: zulip_handler.on_event(  # pylint: disable=unnecessary-lambda
+                            event
+                        ),
+                        apply_markdown=True,
+                    ),
                 )
 
                 asyncio.ensure_future(self._on_connect())
