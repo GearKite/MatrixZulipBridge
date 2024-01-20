@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10"]
+
+    name: pytest ${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "${{ matrix.python-version }}"
+      - uses: Gr1N/setup-poetry@v8
+      - uses: actions/cache@v2
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: ${{ runner.os }}-poetry-${{ hashFiles('poetry.lock') }}
+      - run: poetry install --with=dev
+
+      - name: Run tests
+        shell: bash
+        run: |
+          PYTHONPATH="$(pwd)" poetry run pytest -vs --cov=matrixzulipbridge --cov-report term-missing
