@@ -23,10 +23,10 @@
 #
 from matrixzulipbridge import __version__
 from matrixzulipbridge.command_parse import CommandManager, CommandParserError
-from matrixzulipbridge.room import Room
+from matrixzulipbridge.under_organization_room import UnderOrganizationRoom
 
 
-class PersonalRoom(Room):
+class PersonalRoom(UnderOrganizationRoom):
     commands: CommandManager
 
     def init(self):
@@ -45,7 +45,7 @@ class PersonalRoom(Room):
 
     async def show_help(self):
         self.send_notice_html(
-            f"<b>Howdy, stranger!</b> This is your personal <b>{self.serv.server_name}</b> room."
+            f"<b>Howdy, stranger!</b> This is your personal room for {self.organization.name}."
         )
 
         try:

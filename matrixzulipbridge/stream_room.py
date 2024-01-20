@@ -23,34 +23,17 @@
 #
 import asyncio
 import logging
-import re
 from typing import TYPE_CHECKING, Optional
 
 from mautrix.types import MessageType
 
 from matrixzulipbridge.command_parse import CommandParser
 from matrixzulipbridge.private_room import PrivateRoom
+from matrixzulipbridge.room import InvalidConfigError
+from matrixzulipbridge.under_organization_room import connected
 
 if TYPE_CHECKING:
     from matrixzulipbridge.organization_room import OrganizationRoom
-
-
-def connected(f):
-    """Wait until organization has connected to Zulip."""
-
-    def wrapper(*args, **kwargs):
-        self = args[0]
-
-        if (
-            not self.organization
-            or not self.organization.zulip
-            or not self.organization.zulip.has_connected
-        ):
-            return asyncio.sleep(0)
-
-        return f(*args, **kwargs)
-
-    return wrapper
 
 
 class StreamRoom(PrivateRoom):
@@ -188,7 +171,6 @@ class StreamRoom(PrivateRoom):
         room.name = name.lower()
         room.organization = organization
         room.organization_id = organization.id
-        room.organization_name = organization.name
         room.max_backfill_amount = organization.max_backfill_amount
 
         result = organization.zulip.get_stream_id(name)
@@ -202,7 +184,6 @@ class StreamRoom(PrivateRoom):
 
         room.organization = organization
         room.organization_id = organization.id
-        room.organization_name = organization.name
 
         # stamp global member sync setting at room creation time
         room.member_sync = organization.serv.config["member_sync"]
@@ -226,7 +207,7 @@ class StreamRoom(PrivateRoom):
             self.stream_id = config["stream_id"]
 
         if self.stream_id is None:
-            raise Exception("No stream_id key in config for ChannelRoom")
+            raise InvalidConfigError("No stream_id key in config for ChannelRoom")
 
         # initialize lazy members dict if sync is not off
         if self.member_sync != "off":
@@ -292,26 +273,11 @@ class StreamRoom(PrivateRoom):
         if self.organization.space:
             await self.organization.space.attach(self.id)
 
-    # topic updates from channel state replies are ignored because formatting changes
-    def set_topic(self, topic: str, user_id: Optional[str] = None) -> None:
-        pass
-
-    def on_topic(self, conn, event) -> None:
-        self.send_notice(f"{event.source.nick} changed the topic")
-        if conn.real_nickname != event.source.nick and self.topic_sync in [
-            "matrix",
-            "any",
-        ]:
-            raise NotImplementedError(
-                "Set Matrix room topic to Zulip stream description"
-            )
-            # super().set_topic()
-
     @connected
     async def _on_mx_room_topic(self, event) -> None:
         if event.sender != self.serv.user_id and self.topic_sync in ["zulip", "any"]:
-            topic = re.sub(r"[\r\n]", " ", event.content.topic)
-            self.organization.conn.topic(self.name, topic)
+            # topic = re.sub(r"[\r\n]", " ", event.content.topic)
+            raise NotImplementedError("Changing Zulip stream description")
 
     @connected
     async def on_mx_message(self, event) -> None:
@@ -412,20 +378,6 @@ class StreamRoom(PrivateRoom):
     @connected
     async def on_mx_leave(self, user_id) -> None:
         pass
-
-    def pills(self):
-        # if pills are disabled, don't generate any
-        if self.organization.pills_length < 1:
-            return None
-
-        ret = super().pills()
-
-        # remove the bot from pills as it may cause confusion
-        nick = self.organization.conn.real_nickname.lower()
-        if nick in ret:
-            del ret[nick]
-
-        return ret
 
     async def cmd_displaynames(self, args) -> None:
         if args.enabled is not None:

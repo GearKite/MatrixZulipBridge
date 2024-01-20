@@ -30,7 +30,6 @@ import json
 import logging
 import re
 from argparse import Namespace
-from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
 import zulip
@@ -43,26 +42,16 @@ from matrixzulipbridge.command_parse import (
     CommandParserError,
 )
 from matrixzulipbridge.private_room import PrivateRoom
-from matrixzulipbridge.room import Room
+from matrixzulipbridge.room import InvalidConfigError, Room
 from matrixzulipbridge.space_room import SpaceRoom
 from matrixzulipbridge.stream_room import StreamRoom
+
+# pylint: disable=unused-import
+from matrixzulipbridge.under_organization_room import connected
 from matrixzulipbridge.zulip import ZulipEventHandler
 
 if TYPE_CHECKING:
     from matrixzulipbridge.appservice import AppService
-
-
-def connected(f):
-    def wrapper(*args, **kwargs):
-        self = args[0]
-
-        if not self.zulip or not self.zulip.has_connected:
-            self.send_notice("Need to be connected to use this command.")
-            return asyncio.sleep(0)
-
-        return f(*args, **kwargs)
-
-    return wrapper
 
 
 class OrganizationRoom(Room):
@@ -81,21 +70,14 @@ class OrganizationRoom(Room):
     commands: CommandManager
     rooms: dict[str, Room]
     connecting: bool
-    real_host: str
-    real_user: str
-    pending_kickbans: dict[str, list[tuple[str, str]]]
     backoff: int
     backoff_task: Any
-    next_server: int
     connected_at: int
     space: SpaceRoom
     post_init_done: bool
-    caps_supported: list
-    caps_enabled: list
-    caps_task: Any
     disconnect: bool
 
-    organization: Any
+    organization: "OrganizationRoom"
 
     profile: dict
     messages: dict[str, str]
@@ -107,24 +89,8 @@ class OrganizationRoom(Room):
         self.name = None
         self.connected = False
         self.fullname = None
-        self.ircname = None
-        self.password = None
-        self.sasl_mechanism = None
-        self.sasl_username = None
-        self.sasl_password = None
-        self.autocmd = None
-        self.pills_length = 2
-        self.pills_ignore = []
-        self.autoquery = True
-        self.allow_ctcp = False
-        self.tls_cert = None
-        self.rejoin_invite = True
-        self.rejoin_kick = False
-        self.caps = ["message-tags", "chghost", "znc.in/self-message"]
-        self.forward = False
         self.backoff = 0
         self.backoff_task = None
-        self.next_server = 0
         self.connected_at = 0
 
         self.api_key = None
@@ -137,19 +103,7 @@ class OrganizationRoom(Room):
         self.rooms = {}
         self.connlock = asyncio.Lock()
         self.disconnect = True
-        self.real_host = "?" * 63  # worst case default
-        self.real_user = "?" * 8  # worst case default
-        self.keys = {}  # temp dict of join channel keys
-        self.keepnick_task = None  # async task
-        self.whois_data = defaultdict(dict)  # buffer for keeping partial whois replies
-        self.pending_kickbans = defaultdict(list)
         self.space = None
-        self.post_init_done = False
-        self.caps_supported = []
-        self.caps_enabled = []
-        self.caps_task = None
-
-        self.organization = self
 
         self.profile = None
         self.messages = {}
@@ -306,7 +260,7 @@ class OrganizationRoom(Room):
         if "name" in config:
             self.name = config["name"]
         else:
-            raise Exception("No name key in config for OrganizationRoom")
+            raise InvalidConfigError("No name key in config for OrganizationRoom")
 
         if "api_key" in config and config["api_key"]:
             self.api_key = config["api_key"]
@@ -356,18 +310,13 @@ class OrganizationRoom(Room):
         self.connected = False
         self.disconnect = True
 
-        if self.caps_task:
-            self.caps_task.cancel()
-            self.caps_task = None
-            logging.debug("... cancelled caps task")
-
         if self.backoff_task:
             self.backoff_task.cancel()
             self.backoff_task = None
             logging.debug("... cancelled backoff task")
 
         if self.zulip:
-            raise NotImplementedError("Zulip disconnect is not implemented")
+            self.zulip = None
 
         if self.space:
             self.serv.unregister_room(self.space.id)
@@ -418,12 +367,7 @@ class OrganizationRoom(Room):
             self.backoff_task.cancel()
             self.backoff_task = None
 
-        if self.caps_task:
-            self.caps_task.cancel()
-            self.caps_task = None
-
         self.backoff = 0
-        self.next_server = 0
         self.connected_at = 0
 
         if self.connected:
@@ -548,8 +492,6 @@ class OrganizationRoom(Room):
             conntime = str(datetime.timedelta(seconds=int(conntime)))
             self.send_notice(f"Connected for {conntime}")
 
-            if self.real_host[0] != "?":
-                self.send_notice(f"Connected from host {self.real_host}")
         else:
             self.send_notice("Not connected to server.")
 
@@ -664,10 +606,6 @@ class OrganizationRoom(Room):
         if self.zulip:
             self.zulip = None
 
-        # reset whois and kickbans buffers
-        self.whois_data.clear()
-        self.pending_kickbans.clear()
-
         while not self.disconnect:
             if self.name not in self.serv.config["organizations"]:
                 self.send_notice(
@@ -745,72 +683,6 @@ class OrganizationRoom(Room):
 
         self.send_notice("Connection aborted.")
 
-    def on_disconnect(self, conn, event) -> None:
-        if self.caps_task:
-            self.caps_task.cancel()
-            self.caps_task = None
-
-        if self.zulip:
-            self.zulip = None
-
-        # if we were connected for a while, consider the server working
-        if (
-            self.connected_at > 0
-            and asyncio.get_running_loop().time() - self.connected_at > 300
-        ):
-            self.backoff = 0
-            self.next_server = 0
-            self.connected_at = 0
-
-        if self.connected and not self.disconnect:
-            if self.backoff < 1800:
-                self.backoff += 5
-
-            self.send_notice(f"Disconnected, reconnecting in {self.backoff} seconds...")
-
-            async def later(self):
-                self.backoff_task = asyncio.ensure_future(asyncio.sleep(self.backoff))
-                try:
-                    await self.backoff_task
-                    await self.connect()
-                except asyncio.CancelledError:
-                    self.send_notice("Reconnect cancelled.")
-                finally:
-                    self.backoff_task = None
-
-            asyncio.ensure_future(later(self))
-            asyncio.ensure_future(
-                self.serv.push_bridge_state(
-                    BridgeStateEvent.TRANSIENT_DISCONNECT, remote_id=self.name
-                )
-            )
-        else:
-            self.send_notice("Disconnected.")
-            asyncio.ensure_future(
-                self.serv.push_bridge_state(
-                    BridgeStateEvent.LOGGED_OUT, remote_id=self.name
-                )
-            )
-
-    def source_text(self, conn, event) -> str:
-        source = None
-
-        if event.source is not None:
-            source = str(event.source.nick)
-
-            if event.source.user is not None and event.source.host is not None:
-                source += f" ({event.source.user}@{event.source.host})"
-        else:
-            source = conn.server
-
-        return source
-
-    def on_quit(self, conn, event) -> None:
-        # leave channels
-        for room in self.rooms.values():
-            if isinstance(room, StreamRoom):
-                room.on_quit(conn, event)
-
     async def _on_connect(self):
         await self._sync_permissions()
         await self._sync_all_room_members()
@@ -857,7 +729,7 @@ class OrganizationRoom(Room):
 
     def get_zulip_user_id_from_mxid(self, mxid: str) -> str:
         ret = re.search(
-            rf"@{self.serv.puppet_prefix}{self.organization.name.lower()}{self.serv.puppet_separator}(\d+):{self.serv.server_name}",
+            rf"@{self.serv.puppet_prefix}{self.name.lower()}{self.serv.puppet_separator}(\d+):{self.serv.server_name}",
             mxid,
         )
         return ret.group(1)

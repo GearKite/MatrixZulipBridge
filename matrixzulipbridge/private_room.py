@@ -27,63 +27,30 @@ import re
 from typing import TYPE_CHECKING, Optional
 from urllib.parse import urlparse
 
-from bs4 import BeautifulSoup
-from markdownify import markdownify
 from mautrix.api import Method, SynapseAdminPath
-from mautrix.errors import MatrixStandardRequestError
-from mautrix.types.event.state import (
-    JoinRestriction,
-    JoinRestrictionType,
-    JoinRule,
-    JoinRulesStateEventContent,
-)
-from mautrix.types.event.type import EventType
 
 from matrixzulipbridge.command_parse import (
     CommandManager,
     CommandParser,
     CommandParserError,
 )
-from matrixzulipbridge.room import InvalidConfigError, Room
+from matrixzulipbridge.room import InvalidConfigError
+from matrixzulipbridge.under_organization_room import UnderOrganizationRoom, connected
 
 if TYPE_CHECKING:
     from matrixzulipbridge.organization_room import OrganizationRoom
 
 
-def connected(f):
-    def wrapper(*args, **kwargs):
-        self = args[0]
-
-        if (
-            not self.organization
-            or not self.organization.conn
-            or not self.organization.conn.connected
-        ):
-            self.send_notice("Need to be connected to use this command.")
-            return asyncio.sleep(0)
-
-        return f(*args, **kwargs)
-
-    return wrapper
-
-
-class PrivateRoom(Room):
+class PrivateRoom(UnderOrganizationRoom):
     name: str
-    organization: Optional["OrganizationRoom"]
-    organization_id: str
-    organization_name: Optional[str]
     media: list[list[str]]
     max_backfill_amount: int
-
-    force_forward = False
+    lazy_members: dict
 
     commands: CommandManager
 
     def init(self) -> None:
         self.name = None
-        self.organization = None
-        self.organization_id = None
-        self.organization_name = None  # deprecated
         self.media = []
         self.lazy_members = {}  # allow lazy joining your own ghost for echo
         self.max_backfill_amount = None
@@ -112,20 +79,8 @@ class PrivateRoom(Room):
 
         self.name = config["name"]
 
-        if "organization_id" in config:
-            self.organization_id = config["organization_id"]
-
         if "media" in config:
             self.media = config["media"]
-
-        # only used for migration
-        if "organization" in config:
-            self.organization_name = config["organization"]
-
-        if self.organization_name is None and self.organization_id is None:
-            raise InvalidConfigError(
-                "No organization or organization_id key in config for PrivateRoom"
-            )
 
         if "max_backfill_amount" in config:
             self.max_backfill_amount = config["max_backfill_amount"]
@@ -134,7 +89,6 @@ class PrivateRoom(Room):
         return {
             **(super().to_config()),
             "name": self.name,
-            "organization": self.organization_name,
             "organization_id": self.organization_id,
             "media": self.media[:5],
             "max_backfill_amount": self.max_backfill_amount,
@@ -150,14 +104,14 @@ class PrivateRoom(Room):
         # asyncio.ensure_future(room.create_mx(name))
         # return room
 
-    async def create_mx(self, displayname) -> None:
+    async def create_mx(self, name) -> None:
         if self.id is None:
             mx_user_id = await self.organization.serv.ensure_zulip_user_id(
-                self.organization.name, displayname, update_cache=False
+                self.organization.name, name, update_cache=False
             )
             self.id = await self.organization.serv.create_room(
-                f"{displayname} ({self.organization.name})",
-                "Private chat with {displayname} on {self.organization.name}",
+                f"{name} ({self.organization.name})",
+                f"Private chat with {name} on {self.organization.name}",
                 [self.organization.user_id, mx_user_id],
             )
             self.serv.register_room(self)
@@ -171,7 +125,7 @@ class PrivateRoom(Room):
                 await self.organization.space.attach(self.id)
 
     def is_valid(self) -> bool:
-        if self.organization_id is None and self.organization_name is None:
+        if self.organization_id is None:
             return False
 
         if self.name is None:
@@ -233,82 +187,6 @@ class PrivateRoom(Room):
             self.organization.send_notice_html(text=f"{self.name}: {text}")
         else:
             super().send_notice_html(text=text, user_id=user_id)
-
-    def pills(self):
-        # if pills are disabled, don't generate any
-        if self.organization.pills_length < 1:
-            return None
-
-        ret = {}
-        ignore = list(map(lambda x: x.lower(), self.organization.pills_ignore))
-
-        # push our own name first
-        lnick = self.organization.conn.real_nickname.lower()
-        if (
-            self.user_id in self.displaynames
-            and len(lnick) >= self.organization.pills_length
-            and lnick not in ignore
-        ):
-            ret[lnick] = (self.user_id, self.displaynames[self.user_id])
-
-        # assuming displayname of a puppet matches nick
-        for member in self.members:
-            if not self.serv.is_puppet(member):
-                continue
-
-            if member in self.displaynames:
-                nick = self.displaynames[member]
-                lnick = nick.lower()
-                if len(nick) >= self.organization.pills_length and lnick not in ignore:
-                    ret[lnick] = (member, nick)
-
-        return ret
-
-    async def _process_event_content(self, event, prefix="", _reply_to=None):
-        content = event.content
-
-        if content.formatted_body:
-            message = content.formatted_body
-
-            if "m.mentions" in content:
-                mentioned_users: list[str] = event.content["m.mentions"].get(
-                    "user_ids", []
-                )
-                soup = BeautifulSoup(content.formatted_body, features="html.parser")
-                for mxid in mentioned_users:
-                    # Translate puppet mentions as native Zulip mentions
-                    if not self.serv.is_puppet(mxid):
-                        continue
-
-                    user_id = self.organization.get_zulip_user_id_from_mxid(mxid)
-                    zulip_user = self.organization.get_zulip_user(user_id)
-
-                    # Replace matrix.to links with Zulip mentions
-                    mentions = soup.find_all(
-                        "a",
-                        href=f"https://matrix.to/#/{mxid}",
-                    )
-
-                    zulip_mention = soup.new_tag("span")
-                    zulip_mention.string = " @"
-                    zulip_mention_content = soup.new_tag("strong")
-                    zulip_mention_content.string = (
-                        f"{zulip_user['full_name']}|{user_id}"
-                    )
-                    zulip_mention.append(zulip_mention_content)
-
-                    for mention in mentions:
-                        mention.replace_with(zulip_mention)
-                message = soup.encode(formatter="html5")
-
-            message = markdownify(message)
-        elif content.body:
-            message = content.body
-        else:
-            logging.warning("_process_event_content called with no usable body")
-            return
-        message = prefix + message
-        return message
 
     async def _send_message(self, event, prefix=""):
         raise NotImplementedError("Private messages to Zulip")
@@ -391,49 +269,6 @@ class PrivateRoom(Room):
         self.send_notice(
             f"Maximum backfill amount is set to: {self.max_backfill_amount}"
         )
-
-    async def _attach_space_internal(self) -> None:
-        await self.az.intent.send_state_event(
-            self.id,
-            EventType.ROOM_JOIN_RULES,  # Why does this happend? pylint: disable=no-member
-            content=JoinRulesStateEventContent(
-                join_rule=JoinRule.RESTRICTED,
-                allow=[
-                    JoinRestriction(
-                        type=JoinRestrictionType.ROOM_MEMBERSHIP,
-                        room_id=self.organization.space.id,
-                    ),
-                ],
-            ),
-        )
-
-    async def _attach_space(self) -> None:
-        logging.debug(
-            f"Attaching room {self.id} to organization space {self.organization.space.id}."
-        )
-        try:
-            room_create = await self.az.intent.get_state_event(
-                self.id, EventType.ROOM_CREATE
-            )  # pylint: disable=no-member
-            if room_create.room_version in [str(v) for v in range(1, 9)]:
-                self.send_notice(
-                    "Only rooms of version 9 or greater can be attached to a space."
-                )
-                self.send_notice(
-                    "Leave and re-create the room to ensure the correct version."
-                )
-                return
-
-            await self._attach_space_internal()
-            self.send_notice("Attached to space.")
-        except MatrixStandardRequestError as e:
-            logging.debug("Setting join_rules for space failed.", exc_info=True)
-            self.send_notice(f"Failed attaching space: {e.message}")
-            self.send_notice("Make sure the room is at least version 9.")
-        except Exception:
-            logging.exception(
-                f"Failed to attach {self.id} to space {self.organization.space.id}."
-            )
 
     async def cmd_upgrade(self, args) -> None:
         if not args.undo:
