@@ -73,6 +73,7 @@ class OrganizationRoom(Room):
     email: str
     site: str
     zulip: "zulip.Client"
+    zulip_users: dict[int, dict]
 
     # state
     commands: CommandManager
@@ -125,6 +126,7 @@ class OrganizationRoom(Room):
         self.api_key = None
         self.email = None
         self.site = None
+        self.zulip_users = {}
 
         self.commands = CommandManager()
         self.zulip = None
@@ -801,3 +803,11 @@ class OrganizationRoom(Room):
             if not room or not isinstance(room, StreamRoom):
                 continue
             asyncio.ensure_future(room.sync_zulip_members(stream["subscribers"]))
+
+    def get_zulip_user(self, user_id: int, update_cache: bool = False):
+        if update_cache or user_id not in self.zulip_users:
+            result = self.zulip.get_user_by_id(user_id)
+            if result["result"] != "success":
+                raise Exception(f"Could not get Zulip user {user_id}: {result['msg']}")
+            self.zulip_users[user_id] = result["user"]
+        return self.zulip_users[user_id]
