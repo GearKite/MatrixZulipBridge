@@ -813,9 +813,9 @@ class OrganizationRoom(Room):
             self.zulip_users[user_id] = result["user"]
         return self.zulip_users[user_id]
 
-    def get_zulip_user_id_from_mxid(self, mxid: str) -> int:
+    def get_zulip_user_id_from_mxid(self, mxid: str) -> str:
         ret = re.search(
-            rf"@{self.serv.puppet_prefix}.*{self.serv.puppet_separator}{self.name}:{self.serv.server_name}",
+            rf"@{self.serv.puppet_prefix}{self.organization.name.lower()}{self.serv.puppet_separator}(\d+):{self.serv.server_name}",
             mxid,
         )
-        return int(ret.group(1))
+        return ret.group(1)
