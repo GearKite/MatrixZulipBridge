@@ -47,6 +47,8 @@ class ZulipEventHandler:
                 self._handle_reaction(event)
             case "delete_message":
                 self._handle_delete_message(event)
+            case "realm_user":
+                self._handle_realm_user(event)
             case _:
                 logging.debug(f"Unhandled event type: {event['type']}")
 
@@ -133,6 +135,14 @@ class ZulipEventHandler:
                 case "peer_remove":
                     for user_id in event["user_ids"]:
                         room.on_part(user_id)
+
+    def _handle_realm_user(self, event: dict):
+        # Update Zulip user cache
+        if event["op"] == "update":
+            user_id = event["person"]["user_id"]
+            if not user_id in self.organization.zulip_users:
+                return
+            self.organization.zulip_users[user_id] |= event["person"]
 
     def _get_mxid_from_zulip_id(self, zulip_id: int):
         try:
