@@ -25,10 +25,10 @@
 import matrixzulipbridge.appservice
 import matrixzulipbridge.command_parse
 import matrixzulipbridge.control_room
+import matrixzulipbridge.direct_room
 import matrixzulipbridge.event_queue
 import matrixzulipbridge.organization_room
 import matrixzulipbridge.personal_room
-import matrixzulipbridge.private_room
 import matrixzulipbridge.room
 import matrixzulipbridge.space_room
 import matrixzulipbridge.stream_room

@@ -326,7 +326,7 @@ class ControlRoom(Room):
                 nplumbs = 0
 
                 for room in organization.rooms.values():
-                    if type(room).__name__ == "PrivateRoom":
+                    if type(room).__name__ == "DirectRoom":
                         nprivates += 1
                     if type(room).__name__ == "StreamRoom":
                         nchannels += 1

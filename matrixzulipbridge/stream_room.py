@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Optional
 from mautrix.types import MessageType
 
 from matrixzulipbridge.command_parse import CommandParser
-from matrixzulipbridge.private_room import PrivateRoom
+from matrixzulipbridge.direct_room import DirectRoom
 from matrixzulipbridge.room import InvalidConfigError
 from matrixzulipbridge.under_organization_room import connected
 
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from matrixzulipbridge.organization_room import OrganizationRoom
 
 
-class StreamRoom(PrivateRoom):
+class StreamRoom(DirectRoom):
     """Puppeting room for Zulip stream."""
 
     key: Optional[str]

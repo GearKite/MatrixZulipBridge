@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from matrixzulipbridge.organization_room import OrganizationRoom
 
 
-class PrivateRoom(UnderOrganizationRoom):
+class DirectRoom(UnderOrganizationRoom):
     name: str
     media: list[list[str]]
     max_backfill_amount: int
@@ -57,7 +57,7 @@ class PrivateRoom(UnderOrganizationRoom):
 
         self.commands = CommandManager()
 
-        if isinstance(self, PrivateRoom):
+        if isinstance(self, DirectRoom):
             cmd = CommandParser(prog="WHOIS", description="WHOIS the other user")
             self.commands.register(cmd, self.cmd_whois)
 
@@ -95,9 +95,9 @@ class PrivateRoom(UnderOrganizationRoom):
         }
 
     @staticmethod
-    async def create(organization: "OrganizationRoom", name: str) -> "PrivateRoom":
+    async def create(organization: "OrganizationRoom", name: str) -> "DirectRoom":
         logging.debug(
-            f"PrivateRoom.create(organization='{organization.name}', name='{name}')"
+            f"DirectRoom.create(organization='{organization.name}', name='{name}')"
         )
         raise NotImplementedError("Direct messaging")
 

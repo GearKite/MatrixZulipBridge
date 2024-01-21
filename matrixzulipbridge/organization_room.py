@@ -41,8 +41,8 @@ from matrixzulipbridge.command_parse import (
     CommandParser,
     CommandParserError,
 )
+from matrixzulipbridge.direct_room import DirectRoom
 from matrixzulipbridge.personal_room import PersonalRoom
-from matrixzulipbridge.private_room import PrivateRoom
 from matrixzulipbridge.room import InvalidConfigError, Room
 from matrixzulipbridge.space_room import SpaceRoom
 from matrixzulipbridge.stream_room import StreamRoom
@@ -518,7 +518,7 @@ class OrganizationRoom(Room):
 
         for room in self.rooms.values():
             match room:
-                case PrivateRoom():
+                case DirectRoom():
                     pms.append(room.name)
                 case StreamRoom():
                     chans.append(room.name)
@@ -555,7 +555,7 @@ class OrganizationRoom(Room):
             await self.save()
         if args.update:
             for room in self.rooms.values():
-                if not isinstance(room, PrivateRoom):
+                if not isinstance(room, DirectRoom):
                     continue
                 room.max_backfill_amount = self.max_backfill_amount
                 await room.save()
@@ -592,7 +592,7 @@ class OrganizationRoom(Room):
 
     async def post_init(self) -> None:
         # attach loose sub-rooms to us
-        for room_type in [PrivateRoom, StreamRoom, PersonalRoom]:
+        for room_type in [DirectRoom, StreamRoom, PersonalRoom]:
             for room in self.serv.find_rooms(room_type, self.user_id):
                 if room.organization_id == self.id:
                     room.organization = self

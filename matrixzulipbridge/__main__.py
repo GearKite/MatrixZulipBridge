@@ -53,9 +53,9 @@ from mautrix.util.config import yaml
 from matrixzulipbridge import __version__
 from matrixzulipbridge.appservice import AppService
 from matrixzulipbridge.control_room import ControlRoom
+from matrixzulipbridge.direct_room import DirectRoom
 from matrixzulipbridge.organization_room import OrganizationRoom
 from matrixzulipbridge.personal_room import PersonalRoom
-from matrixzulipbridge.private_room import PrivateRoom
 from matrixzulipbridge.room import Room, RoomInvalidError
 from matrixzulipbridge.space_room import SpaceRoom
 from matrixzulipbridge.stream_room import StreamRoom
@@ -693,7 +693,7 @@ class BridgeAppService(AppService):
         room_types = [
             ControlRoom,
             OrganizationRoom,
-            PrivateRoom,
+            DirectRoom,
             StreamRoom,
             PersonalRoom,
             SpaceRoom,
