@@ -599,6 +599,7 @@ class BridgeAppService(AppService):
             "media_url": None,
             "media_path": None,
             "namespace": self.puppet_prefix,
+            "allow": {},
         }
         logging.debug(f"Default config: {self.config}")
         self.synapse_admin = False

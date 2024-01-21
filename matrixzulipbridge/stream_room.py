@@ -314,7 +314,11 @@ class StreamRoom(PrivateRoom):
         await self.az.intent.send_receipt(event.room_id, event.event_id)
 
     async def _relay_message(self, event, sender):
-        prefix = f"<{sender}> "
+        prefix = ""
+        client = self.organization.zulip_puppets.get(event.sender)
+        if not client:
+            client = self.organization.zulip
+            prefix = f"<{sender}> "
 
         # try to find out if this was a reply
         reply_to = None
@@ -363,7 +367,14 @@ class StreamRoom(PrivateRoom):
             "topic": topic,
             "content": message,
         }
-        self.organization.zulip.send_message(request)
+
+        result = client.send_message(request)
+        if result["result"] != "success":
+            logging.error(f"Failed sending message to Zulip: {result['msg']}")
+            return
+
+        self.organization.messages[result["id"]] = event.event_id
+        await self.organization.save()
 
         await self.save()
 

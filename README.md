@@ -15,7 +15,7 @@ Join the Matrix room [#MatrixZulipBridge:shema.lv](https://matrix.to/#/#matrixzu
 - [ ] Direct messages
 - [x] Formatted text\* (not all of Zulip's formatting)
 - [x] Matrix puppets
-- [ ] Zulip puppets
+- [x] Zulip puppets
 - [ ] Message Media
 - [ ] Presence
 - [ ] Reactions

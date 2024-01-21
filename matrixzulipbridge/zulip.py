@@ -59,6 +59,9 @@ class ZulipEventHandler:
         zulip_user_id = event["sender_id"]
         if zulip_user_id == self.organization.profile["user_id"]:
             return  # Ignore own messages
+        if event["id"] in self.organization.messages:
+            # Skip already forwarded messages
+            return
         if "stream_id" not in event:
             return  # Ignore DMs
 

@@ -41,6 +41,7 @@ from matrixzulipbridge.command_parse import (
     CommandParser,
     CommandParserError,
 )
+from matrixzulipbridge.personal_room import PersonalRoom
 from matrixzulipbridge.private_room import PrivateRoom
 from matrixzulipbridge.room import InvalidConfigError, Room
 from matrixzulipbridge.space_room import SpaceRoom
@@ -65,6 +66,8 @@ class OrganizationRoom(Room):
     site: str
     zulip: "zulip.Client"
     zulip_users: dict[int, dict]
+    zulip_puppet_login: dict[str, dict]
+    zulip_puppets: dict[str, "zulip.Client"]
 
     # state
     commands: CommandManager
@@ -97,6 +100,8 @@ class OrganizationRoom(Room):
         self.email = None
         self.site = None
         self.zulip_users = {}
+        self.zulip_puppet_login = {}
+        self.zulip_puppets = {}
 
         self.commands = CommandManager()
         self.zulip = None
@@ -104,6 +109,8 @@ class OrganizationRoom(Room):
         self.connlock = asyncio.Lock()
         self.disconnect = True
         self.space = None
+
+        self.organization = self
 
         self.profile = None
         self.messages = {}
@@ -232,6 +239,12 @@ class OrganizationRoom(Room):
         )
         self.commands.register(cmd, self.cmd_backfill)
 
+        cmd = CommandParser(
+            prog="PERSONALROOM",
+            description="create a personal room",
+        )
+        self.commands.register(cmd, self.cmd_personalroom)
+
         self.mx_register("m.room.message", self.on_mx_message)
 
     @staticmethod
@@ -277,6 +290,9 @@ class OrganizationRoom(Room):
         if "max_backfill_amount" in config and config["max_backfill_amount"]:
             self.max_backfill_amount = config["max_backfill_amount"]
 
+        if "zulip_puppet_login" in config and config["zulip_puppet_login"]:
+            self.zulip_puppet_login = config["zulip_puppet_login"]
+
     def to_config(self) -> dict:
         return {
             "name": self.name,
@@ -285,6 +301,7 @@ class OrganizationRoom(Room):
             "site": self.site,
             "messages": self.messages,
             "max_backfill_amount": self.max_backfill_amount,
+            "zulip_puppet_login": self.zulip_puppet_login,
         }
 
     def is_valid(self) -> bool:
@@ -550,6 +567,10 @@ class OrganizationRoom(Room):
                 f"Maximum backfill amount is set to: {self.max_backfill_amount}"
             )
 
+    async def cmd_personalroom(self, _args) -> None:
+        await PersonalRoom.create(self, self.user_id)
+        self.send_notice("Personal room created")
+
     async def connect(self) -> None:
         if not self.is_valid():
             logging.warning(
@@ -571,24 +592,17 @@ class OrganizationRoom(Room):
 
     async def post_init(self) -> None:
         # attach loose sub-rooms to us
-        for room_type in [PrivateRoom, StreamRoom]:
+        for room_type in [PrivateRoom, StreamRoom, PersonalRoom]:
             for room in self.serv.find_rooms(room_type, self.user_id):
-                if room.stream_id not in self.rooms and (
-                    room.organization_id == self.id
-                    or (
-                        room.organization_id is None
-                        and room.organization_name == self.name
-                    )
-                ):
+                if room.organization_id == self.id:
                     room.organization = self
-                    # this doubles as a migration
-                    if room.organization_id is None:
-                        logging.debug(f"{self.id} attaching and migrating {room.id}")
-                        room.organization_id = self.id
-                        await room.save()
-                    else:
-                        logging.debug(f"{self.id} attaching {room.id}")
-                    self.rooms[room.stream_id] = room
+
+                    logging.debug(f"{self.id} attaching {room.id}")
+                    match room:
+                        case StreamRoom():
+                            self.rooms[room.stream_id] = room
+                        case _:
+                            self.rooms[room.id] = room
 
         self.post_init_done = True
 
@@ -684,9 +698,25 @@ class OrganizationRoom(Room):
         self.send_notice("Connection aborted.")
 
     async def _on_connect(self):
+        await self._login_zulip_puppets()
         await self._sync_permissions()
         await self._sync_all_room_members()
         await self.backfill_messages()
+
+    async def _login_zulip_puppets(self):
+        for user_id, login in self.zulip_puppet_login.items():
+            await self.login_zulip_puppet(user_id, login["email"], login["api_key"])
+
+    async def login_zulip_puppet(self, user_id: str, email: str, api_key: str):
+        """Create a Zulip puppet
+
+        Args:
+            user_id (str): MXID
+            email (str): Zulip account email
+            api_key (str): Zulip account API key
+        """
+        client = zulip.Client(email, api_key=api_key, site=self.site)
+        self.zulip_puppets[user_id] = client
 
     async def _sync_permissions(self):
         # Owner should have the highest permissions (after bot)
@@ -736,7 +766,9 @@ class OrganizationRoom(Room):
 
     async def backfill_messages(self):
         for room in self.rooms.values():
+            if not isinstance(room, StreamRoom):
+                continue
             if room.max_backfill_amount == 0:
                 continue
-            if isinstance(room, StreamRoom):
-                await room.backfill_messages()
+
+            await room.backfill_messages()

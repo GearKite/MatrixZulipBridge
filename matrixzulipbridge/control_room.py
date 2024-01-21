@@ -35,6 +35,7 @@ from matrixzulipbridge.command_parse import (
     CommandParserError,
 )
 from matrixzulipbridge.organization_room import OrganizationRoom
+from matrixzulipbridge.personal_room import PersonalRoom
 from matrixzulipbridge.room import Room
 
 
@@ -45,38 +46,47 @@ class ControlRoom(Room):
         self.commands = CommandManager()
 
         cmd = CommandParser(
-            prog="ORGANIZATIONS", description="list available Zulip organizations"
+            prog="PERSONALROOM",
+            description="create a personal room for an organization",
         )
-        self.commands.register(cmd, self.cmd_organizations)
-
-        cmd = CommandParser(prog="OPEN", description="open organization for connecting")
-        cmd.add_argument("name", help="organization name (see ORGANIZATIONS)")
-        cmd.add_argument(
-            "--new",
-            action="store_true",
-            help="force open a new organization connection",
-        )
-        self.commands.register(cmd, self.cmd_open)
-
-        cmd = CommandParser(
-            prog="STATUS",
-            description="show bridge status",
-            epilog="Note: admins see all users but only their own rooms",
-        )
-        self.commands.register(cmd, self.cmd_status)
-
-        cmd = CommandParser(
-            prog="QUIT",
-            description="disconnect from all organizations",
-            epilog=(
-                "For quickly leaving all organizations and removing configurations in a single command.\n"
-                "\n"
-                "Additionally this will close current DM session with the bridge.\n"
-            ),
-        )
-        self.commands.register(cmd, self.cmd_quit)
+        cmd.add_argument("organization", nargs="?", help="organization name")
+        self.commands.register(cmd, self.cmd_personalroom)
 
         if self.serv.is_admin(self.user_id):
+            cmd = CommandParser(
+                prog="ORGANIZATIONS", description="list available Zulip organizations"
+            )
+            self.commands.register(cmd, self.cmd_organizations)
+
+            cmd = CommandParser(
+                prog="OPEN", description="open organization for connecting"
+            )
+            cmd.add_argument("name", help="organization name (see ORGANIZATIONS)")
+            cmd.add_argument(
+                "--new",
+                action="store_true",
+                help="force open a new organization connection",
+            )
+            self.commands.register(cmd, self.cmd_open)
+
+            cmd = CommandParser(
+                prog="STATUS",
+                description="show bridge status",
+                epilog="Note: admins see all users but only their own rooms",
+            )
+            self.commands.register(cmd, self.cmd_status)
+
+            cmd = CommandParser(
+                prog="QUIT",
+                description="disconnect from all organizations",
+                epilog=(
+                    "For quickly leaving all organizations and removing configurations in a single command.\n"
+                    "\n"
+                    "Additionally this will close current DM session with the bridge.\n"
+                ),
+            )
+            self.commands.register(cmd, self.cmd_quit)
+
             cmd = CommandParser(prog="MASKS", description="list allow masks")
             self.commands.register(cmd, self.cmd_masks)
 
@@ -534,3 +544,20 @@ class ControlRoom(Room):
 
     async def cmd_version(self, args):
         self.send_notice(f"zulipbridge v{__version__}")
+
+    async def cmd_personalroom(self, args) -> None:
+        organization = None
+        for room in self.serv.find_rooms():
+            if not isinstance(room, OrganizationRoom):
+                continue
+            if room.name.lower() == args.organization:
+                organization = room
+                break
+        if not organization:
+            # TODO: Add permissions for creating a personal room
+            self.send_notice(
+                "Could not find an organization with that name or you don't have permissions"
+            )
+            return
+        await PersonalRoom.create(organization, self.user_id)
+        self.send_notice("Personal room created")
