@@ -339,19 +339,19 @@ class StreamRoom(DirectRoom):
 
         # Get topic (Matrix thread)
         thread_id = event.content.get_thread_parent()
-        topic = None
+        # Ignore messages outside a thread
+        if thread_id is None:
+            return
 
-        # Reply in thread
-        if thread_id is not None:
-            thread_event = await self.az.intent.get_event(self.id, thread_id)
-            topic = thread_event.content.body
+        thread_event = await self.az.intent.get_event(self.id, thread_id)
+        topic = thread_event.content.body
 
-            # Save last thread event for old clients
-            self.thread_last_message[thread_event.event_id] = event.event_id
+        # Save last thread event for old clients
+        self.thread_last_message[thread_event.event_id] = event.event_id
 
-            # Save thread id for topic
-            if topic not in self.threads:
-                self.threads[topic] = thread_event.event_id
+        # Save thread id for topic
+        if topic not in self.threads:
+            self.threads[topic] = thread_event.event_id
 
         if event.content.get_edit():
             message = await self._process_event_content(event, prefix, reply_to)
