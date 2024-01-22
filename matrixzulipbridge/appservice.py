@@ -57,6 +57,7 @@ class AppService(ABC):
         invite: list[str],
         restricted: str = None,
         permissions: dict = None,
+        is_direct: bool = False,
     ) -> str:
         if permissions is None:
             permissions = {}
@@ -66,7 +67,7 @@ class AppService(ABC):
             "name": name,
             "topic": topic,
             "invite": invite,
-            "is_direct": False,
+            "is_direct": is_direct,
             "power_level_content_override": {
                 "users_default": 0,
                 "invite": 50,
