@@ -22,20 +22,22 @@
 #
 #
 import logging
-import re
 from typing import TYPE_CHECKING, Optional
 
 import emoji
 from markdownify import markdownify
 
+from matrixzulipbridge.direct_room import DirectRoom
+from matrixzulipbridge.stream_room import StreamRoom
+
 if TYPE_CHECKING:
     from matrixzulipbridge.organization_room import OrganizationRoom
-    from matrixzulipbridge.stream_room import StreamRoom
 
 
 class ZulipEventHandler:
     def __init__(self, organization: "OrganizationRoom") -> None:
         self.organization = organization
+        self.messages = set()
 
     def on_event(self, event: dict):
         match event["type"]:
@@ -56,14 +58,17 @@ class ZulipEventHandler:
         self._handle_message(message)
 
     def _handle_message(self, event: dict):
-        zulip_user_id = event["sender_id"]
-        if zulip_user_id == self.organization.profile["user_id"]:
+        if event["type"] != "stream":
+            return
+        if event["sender_id"] == self.organization.profile["user_id"]:
             return  # Ignore own messages
         if event["id"] in self.organization.messages:
             # Skip already forwarded messages
             return
-        if "stream_id" not in event:
-            return  # Ignore DMs
+        # Prevent race condition when single message is received by multiple clients
+        if event["id"] in self.messages:
+            return
+        self.messages.add(event["id"])
 
         room = self._get_room_by_stream_id(event["stream_id"])
 
@@ -73,8 +78,10 @@ class ZulipEventHandler:
             )
             return
 
+        topic = event["subject"]
+
         mx_user_id = room.serv.get_mxid_from_zulip_user_id(
-            self.organization, zulip_user_id
+            self.organization, event["sender_id"]
         )
 
         formatted_message: str = event["content"]
@@ -82,15 +89,51 @@ class ZulipEventHandler:
 
         message = markdownify(formatted_message).rstrip()
 
-        topic = event["subject"]
-
         custom_data = {
             "zulip_topic": topic,
-            "zulip_user_id": zulip_user_id,
+            "zulip_user_id": event["sender_id"],
             "display_name": event["sender_full_name"],
             "zulip_message_id": event["id"],
             "type": "message",
             "timestamp": event["timestamp"],
+            "target": "stream",
+        }
+
+        room.send_message(
+            message,
+            formatted=formatted_message,
+            user_id=mx_user_id,
+            custom_data=custom_data,
+        )
+
+    async def handle_dm_message(self, event: dict):
+        if event["sender_id"] == self.organization.profile["user_id"]:
+            return  # Ignore own messages
+        if event["id"] in self.organization.messages:
+            # Skip already forwarded messages
+            return
+        # Prevent race condition when single message is received by multiple clients
+        if event["id"] in self.messages:
+            return
+        mx_user_id = self.organization.serv.get_mxid_from_zulip_user_id(
+            self.organization, event["sender_id"]
+        )
+        recipient_ids = frozenset(user["id"] for user in event["display_recipient"])
+        room = self.organization.direct_rooms.get(recipient_ids)
+        if not room:
+            room = await DirectRoom.create(
+                self.organization, event["display_recipient"]
+            )
+
+        message, formatted_message = self._process_message_content(event["content"])
+
+        custom_data = {
+            "zulip_user_id": event["sender_id"],
+            "display_name": event["sender_full_name"],
+            "zulip_message_id": event["id"],
+            "type": "message",
+            "timestamp": event["timestamp"],
+            "target": "direct",
         }
 
         room.send_message(
@@ -157,6 +200,13 @@ class ZulipEventHandler:
 
     def _get_room_by_stream_id(self, stream_id: int) -> Optional["StreamRoom"]:
         for room in self.organization.rooms.values():
+            if not isinstance(room, StreamRoom):
+                continue
             if room.stream_id == stream_id:
                 return room
         return None
+
+    def _process_message_content(self, html: str):
+        formatted_message = emoji.emojize(html, language="alias")
+        message = markdownify(formatted_message).rstrip()
+        return message, formatted_message
