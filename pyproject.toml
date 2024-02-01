@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "matrixzulipbridge"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Matrix puppeting bridge for Zulip"
 authors = ["GearKite <emgh@em.id.lv>"]
 license = "AGPL-3.0-or-later"
