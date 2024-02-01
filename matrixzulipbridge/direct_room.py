@@ -242,9 +242,7 @@ class DirectRoom(UnderOrganizationRoom):
         ):
             return
 
-        if event.content.msgtype.is_media:
-            raise NotImplementedError("Sending media to Zulip")
-        elif event.content.msgtype in (
+        if event.content.msgtype.is_media or event.content.msgtype in (
             MessageType.EMOTE,
             MessageType.TEXT,
             MessageType.NOTICE,
