@@ -36,6 +36,8 @@ from matrixzulipbridge.room import InvalidConfigError
 from matrixzulipbridge.under_organization_room import UnderOrganizationRoom, connected
 
 if TYPE_CHECKING:
+    import zulip
+
     from matrixzulipbridge.organization_room import OrganizationRoom
 
 
@@ -323,3 +325,41 @@ class DirectRoom(UnderOrganizationRoom):
     async def cmd_upgrade(self, args) -> None:
         if not args.undo:
             await self._attach_space()
+
+    async def backfill_messages(self):
+        if not self.organization.max_backfill_amount:
+            return
+        request = {
+            "anchor": "newest",
+            "num_before": self.organization.max_backfill_amount,
+            "num_after": 0,
+            "narrow": [
+                {"operator": "dm", "operand": self.recipient_ids},
+            ],
+        }
+
+        client = self.get_any_zulip_client()
+        if client is None:
+            return
+
+        result = client.get_messages(request)
+
+        if result["result"] != "success":
+            logging.error(f"Failed getting Zulip messages: {result['msg']}")
+            return
+
+        for message in result["messages"]:
+            if str(message["id"]) in self.organization.messages:
+                continue
+            self.organization.dm_message(message)
+
+    def get_any_zulip_client(self) -> "zulip.Client":
+        for recipient_id in self.recipient_ids:
+            mxid = self.organization.zulip_puppet_user_mxid.get(recipient_id)
+            if not mxid:
+                continue
+            client = self.organization.zulip_puppets.get(mxid)
+            if client is None:
+                continue
+            return client
+        return None

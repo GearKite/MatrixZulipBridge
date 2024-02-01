@@ -426,6 +426,8 @@ class OrganizationRoom(Room):
         removed_rooms = False
 
         for room in self.rooms.values():
+            if not isinstance(room, StreamRoom):
+                continue
             if room.name.lower() == stream:
                 removed_rooms = True
 
@@ -600,9 +602,7 @@ class OrganizationRoom(Room):
     async def post_init(self) -> None:
         # attach loose sub-rooms to us
         for room_type in [DirectRoom, StreamRoom, PersonalRoom]:
-            for room in self.serv.find_rooms(room_type, self.user_id):
-                if room.organization_id != self.id:
-                    return
+            for room in self.serv.find_rooms(room_type, organization_id=self.id):
                 room.organization = self
 
                 logging.debug(f"{self.id} attaching {room.id}")
@@ -802,12 +802,15 @@ class OrganizationRoom(Room):
 
             await room.backfill_messages()
 
+        for room in self.direct_rooms.values():
+            await room.backfill_messages()
+
     def on_puppet_event(self, event) -> None:
         if event["type"] != "message":
             return
-        self._dm_message(event["message"])
+        self.dm_message(event["message"])
 
-    def _dm_message(self, message) -> None:
+    def dm_message(self, message) -> None:
         event = {"type": "_dm_message", "message": message}
         self._queue.enqueue(event)
 

@@ -129,15 +129,17 @@ class BridgeAppService(AppService):
             del self._rooms[room_id]
 
     # this is mostly used by organization rooms at init, it's a bit slow
-    def find_rooms(self, rtype=None, user_id=None) -> list[Room]:
+    def find_rooms(self, rtype=None, user_id=None, organization_id=None) -> list[Room]:
         ret = []
 
         if rtype is not None and not isinstance(rtype, str):
             rtype = rtype.__name__
 
         for room in self._rooms.values():
-            if (rtype is None or room.__class__.__name__ == rtype) and (
-                user_id is None or room.user_id == user_id
+            if (
+                (rtype is None or room.__class__.__name__ == rtype)
+                and (user_id is None or room.user_id == user_id)
+                and (organization_id is None or room.organization_id == organization_id)
             ):
                 ret.append(room)
 

@@ -25,15 +25,17 @@ import logging
 import re
 from abc import ABC
 from collections import defaultdict
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from mautrix.appservice import AppService as MauService
 from mautrix.errors.base import IntentError
 from mautrix.types import Membership
 from mautrix.types.event.type import EventType
 
-from matrixzulipbridge.appservice import AppService
 from matrixzulipbridge.event_queue import EventQueue
+
+if TYPE_CHECKING:
+    from matrixzulipbridge.__main__ import BridgeAppService
 
 
 class RoomInvalidError(Exception):
@@ -48,7 +50,7 @@ class Room(ABC):
     az: MauService
     id: str
     user_id: str
-    serv: AppService
+    serv: "BridgeAppService"
     members: list[str]
     lazy_members: Optional[dict[str, str]]
     bans: list[str]
@@ -64,7 +66,7 @@ class Room(ABC):
         self,
         id: str,
         user_id: str,
-        serv: AppService,
+        serv: "BridgeAppService",
         members: list[str],
         bans: list[str],
     ):
