@@ -34,6 +34,11 @@ Join the Matrix room [#MatrixZulipBridge:shema.lv](https://matrix.to/#/#matrixzu
 
 `pip install matrixzulipbridge`
 
+### Docker
+
+`docker run ghcr.io/gearkite/matrixzulipbridge:{tag} ...`  
+See [packages](https://github.com/GearKite/MatrixZulipBridge/pkgs/container/matrixzulipbridge) for possible tags
+
 ### From source
 
 1. Clone or download this git repository  
