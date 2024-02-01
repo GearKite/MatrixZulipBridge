@@ -25,15 +25,17 @@ import logging
 import re
 from abc import ABC
 from collections import defaultdict
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from mautrix.appservice import AppService as MauService
 from mautrix.errors.base import IntentError
 from mautrix.types import Membership
 from mautrix.types.event.type import EventType
 
-from matrixzulipbridge.appservice import AppService
 from matrixzulipbridge.event_queue import EventQueue
+
+if TYPE_CHECKING:
+    from matrixzulipbridge.__main__ import BridgeAppService
 
 
 class RoomInvalidError(Exception):
@@ -48,7 +50,7 @@ class Room(ABC):
     az: MauService
     id: str
     user_id: str
-    serv: AppService
+    serv: "BridgeAppService"
     members: list[str]
     lazy_members: Optional[dict[str, str]]
     bans: list[str]
@@ -64,7 +66,7 @@ class Room(ABC):
         self,
         id: str,
         user_id: str,
-        serv: AppService,
+        serv: "BridgeAppService",
         members: list[str],
         bans: list[str],
     ):
@@ -199,147 +201,152 @@ class Room(ABC):
     async def _flush_events(self, events):
         for event in events:
             try:
-                if event["type"] == "_join":
-                    if event["user_id"] not in self.members:
-                        await self._join(event["user_id"], event["nick"])
-                elif event["type"] == "_leave":
-                    if (
-                        self.lazy_members is not None
-                        and event["user_id"] in self.lazy_members
-                    ):
-                        del self.lazy_members[event["user_id"]]
-
-                    if event["user_id"] in self.members:
-                        if event["reason"] is not None:
-                            await self.az.intent.user(event["user_id"]).kick_user(
-                                self.id, event["user_id"], event["reason"]
-                            )
-                        else:
-                            await self.az.intent.user(event["user_id"]).leave_room(
-                                self.id
-                            )
-                        if event["user_id"] in self.members:
-                            self.members.remove(event["user_id"])
-                        if event["user_id"] in self.displaynames:
-                            del self.displaynames[event["user_id"]]
-
-                elif event["type"] == "_kick":
-                    if event["user_id"] in self.members:
-                        await self.az.intent.kick_user(
-                            self.id, event["user_id"], event["reason"]
-                        )
-                        self.members.remove(event["user_id"])
-                        if event["user_id"] in self.displaynames:
-                            del self.displaynames[event["user_id"]]
-                elif event["type"] == "_ensure_zulip_user_id":
-                    await self.serv.ensure_zulip_user_id(
-                        event["organization"],
-                        zulip_user_id=event["zulip_user_id"],
-                        zulip_user=event["zulip_user"],
-                    )
-                elif event["type"] == "_redact":
-                    await self.az.intent.redact(
-                        room_id=self.id,
-                        event_id=event["event_id"],
-                        reason=event["reason"],
-                    )
-                elif event["type"] == "_permission":
-                    if len(event["content"]["users"]) == 0:
-                        return  # No need to send an empty event
-                    try:
-                        await self.az.intent.set_power_levels(
-                            room_id=self.id,
-                            content=event["content"],
-                        )
-                    except IntentError:
-                        pass
-                elif "state_key" in event:
-                    intent = self.az.intent
-
-                    if event["user_id"]:
-                        intent = intent.user(event["user_id"])
-
-                    await intent.send_state_event(
-                        self.id,
-                        EventType.find(event["type"]),
-                        state_key=event["state_key"],
-                        content=event["content"],
-                    )
-                else:
-                    bridge_data = event["content"].get("lv.shema.zulipbridge")
-                    if bridge_data is None:
-                        bridge_data = {}
-
-                    if bridge_data.get("type") == "message":
-                        thread_id = self.threads[bridge_data["zulip_topic"]]
-                        event["content"]["m.relates_to"] = {
-                            "event_id": thread_id,
-                            "rel_type": "m.thread",
-                        }
-                        # https://spec.matrix.org/v1.9/client-server-api/#fallback-for-unthreaded-clients
-                        if thread_id in self.thread_last_message:
-                            event["content"]["m.relates_to"]["is_falling_back"] = True
-                            event["content"]["m.relates_to"]["m.in_reply_to"] = {
-                                "event_id": self.thread_last_message[thread_id]
-                            }
-
-                    intent = (
-                        self.az.intent.user(event["user_id"])
-                        if event["user_id"]
-                        else self.az.intent
-                    )
-
-                    if "zulip_user_id" in bridge_data and "display_name" in bridge_data:
-                        # TODO: Check if the display name is already cached
-                        await intent.set_displayname(bridge_data["display_name"])
-
-                    # Remove bridge data before sending it to Matrix
-                    # This saves a few bytes!
-                    event["content"].pop("lv.shema.zulipbridge", None)
-
-                    timestamp = None
-                    if "timestamp" in bridge_data:
-                        timestamp = bridge_data["timestamp"] * 1000
-
-                    event_type = EventType.find(event["type"])
-                    event_id = await intent.send_message_event(
-                        self.id,
-                        event_type,
-                        event["content"],
-                        timestamp=timestamp,
-                    )
-                    if (
-                        "m.relates_to" in event["content"]
-                        and event["content"]["m.relates_to"]["rel_type"] == "m.thread"
-                    ):
-                        self.thread_last_message[
-                            event["content"]["m.relates_to"]["event_id"]
-                        ] = event_id
-
-                    match bridge_data.get("type"):
-                        case "message":
-                            # Is this efficient?
-                            self.organization.messages[
-                                str(bridge_data["zulip_message_id"])
-                            ] = event_id
-                            await self.organization.save()
-
-                            if self.send_read_receipt:
-                                # Send read receipt to Zulip
-                                self.organization.zulip.update_message_flags(
-                                    {
-                                        "messages": [bridge_data["zulip_message_id"]],
-                                        "op": "add",
-                                        "flag": "read",
-                                    }
-                                )
-
-                        case "topic":
-                            self.threads[bridge_data["zulip_topic"]] = event_id
-                            await self.save()
-
+                await self._flush_event(event)
             except Exception:
                 logging.exception("Queued event failed")
+
+    async def _flush_event(self, event):
+        if event["type"] == "_join":
+            if event["user_id"] not in self.members:
+                await self._join(event["user_id"], event["nick"])
+        elif event["type"] == "_leave":
+            if self.lazy_members is not None and event["user_id"] in self.lazy_members:
+                del self.lazy_members[event["user_id"]]
+
+            if event["user_id"] in self.members:
+                if event["reason"] is not None:
+                    await self.az.intent.user(event["user_id"]).kick_user(
+                        self.id, event["user_id"], event["reason"]
+                    )
+                else:
+                    await self.az.intent.user(event["user_id"]).leave_room(self.id)
+                if event["user_id"] in self.members:
+                    self.members.remove(event["user_id"])
+                if event["user_id"] in self.displaynames:
+                    del self.displaynames[event["user_id"]]
+
+        elif event["type"] == "_kick":
+            if event["user_id"] in self.members:
+                await self.az.intent.kick_user(
+                    self.id, event["user_id"], event["reason"]
+                )
+                self.members.remove(event["user_id"])
+                if event["user_id"] in self.displaynames:
+                    del self.displaynames[event["user_id"]]
+        elif event["type"] == "_ensure_zulip_user_id":
+            await self.serv.ensure_zulip_user_id(
+                event["organization"],
+                zulip_user_id=event["zulip_user_id"],
+                zulip_user=event["zulip_user"],
+            )
+        elif event["type"] == "_redact":
+            await self.az.intent.redact(
+                room_id=self.id,
+                event_id=event["event_id"],
+                reason=event["reason"],
+            )
+        elif event["type"] == "_permission":
+            if len(event["content"]["users"]) == 0:
+                return  # No need to send an empty event
+            try:
+                await self.az.intent.set_power_levels(
+                    room_id=self.id,
+                    content=event["content"],
+                )
+            except IntentError:
+                pass
+        elif "state_key" in event:
+            intent = self.az.intent
+
+            if event["user_id"]:
+                intent = intent.user(event["user_id"])
+
+            await intent.send_state_event(
+                self.id,
+                EventType.find(event["type"]),
+                state_key=event["state_key"],
+                content=event["content"],
+            )
+        else:
+            bridge_data = event["content"].get("lv.shema.zulipbridge")
+            if bridge_data is None:
+                bridge_data = {}
+
+            if (
+                bridge_data.get("type") == "message"
+                and bridge_data.get("target") == "stream"
+            ):
+                thread_id = self.threads[bridge_data["zulip_topic"]]
+                if not thread_id:
+                    logging.error(
+                        f"Thread not created for topic: {bridge_data['zulip_topic']}"
+                    )
+                    return
+                event["content"]["m.relates_to"] = {
+                    "event_id": thread_id,
+                    "rel_type": "m.thread",
+                }
+                # https://spec.matrix.org/v1.9/client-server-api/#fallback-for-unthreaded-clients
+                if thread_id in self.thread_last_message:
+                    event["content"]["m.relates_to"]["is_falling_back"] = True
+                    event["content"]["m.relates_to"]["m.in_reply_to"] = {
+                        "event_id": self.thread_last_message[thread_id]
+                    }
+
+            intent = (
+                self.az.intent.user(event["user_id"])
+                if event["user_id"]
+                else self.az.intent
+            )
+
+            if "zulip_user_id" in bridge_data and "display_name" in bridge_data:
+                # TODO: Check if the display name is already cached
+                await intent.set_displayname(bridge_data["display_name"])
+
+            # Remove bridge data before sending it to Matrix
+            # This saves a few bytes!
+            event["content"].pop("lv.shema.zulipbridge", None)
+
+            timestamp = None
+            if "timestamp" in bridge_data:
+                timestamp = bridge_data["timestamp"] * 1000
+
+            event_type = EventType.find(event["type"])
+            event_id = await intent.send_message_event(
+                self.id,
+                event_type,
+                event["content"],
+                timestamp=timestamp,
+            )
+            if (
+                "m.relates_to" in event["content"]
+                and event["content"]["m.relates_to"]["rel_type"] == "m.thread"
+            ):
+                self.thread_last_message[
+                    event["content"]["m.relates_to"]["event_id"]
+                ] = event_id
+
+            match bridge_data.get("type"):
+                case "message":
+                    # Is this efficient?
+                    self.organization.messages[
+                        str(bridge_data["zulip_message_id"])
+                    ] = event_id
+                    await self.organization.save()
+
+                    if self.send_read_receipt:
+                        # Send read receipt to Zulip
+                        self.organization.zulip.update_message_flags(
+                            {
+                                "messages": [bridge_data["zulip_message_id"]],
+                                "op": "add",
+                                "flag": "read",
+                            }
+                        )
+
+                case "topic":
+                    self.threads[bridge_data["zulip_topic"]] = event_id
+                    await self.save()
 
     # send message to mx user (may be puppeted)
     def send_message(
@@ -385,7 +392,7 @@ class Room(ABC):
 
         if "lv.shema.zulipbridge" in event["content"]:
             bridge_data: dict = event["content"]["lv.shema.zulipbridge"]
-            if bridge_data["type"] == "message":
+            if bridge_data["type"] == "message" and bridge_data["target"] == "stream":
                 self._ensure_thread_for_topic(bridge_data.copy(), user_id)
 
         self._queue.enqueue(event)

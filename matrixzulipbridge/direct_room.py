@@ -23,11 +23,9 @@
 #
 import asyncio
 import logging
-import re
 from typing import TYPE_CHECKING, Optional
-from urllib.parse import urlparse
 
-from mautrix.api import Method, SynapseAdminPath
+from mautrix.types import MessageType
 
 from matrixzulipbridge.command_parse import (
     CommandManager,
@@ -38,28 +36,29 @@ from matrixzulipbridge.room import InvalidConfigError
 from matrixzulipbridge.under_organization_room import UnderOrganizationRoom, connected
 
 if TYPE_CHECKING:
+    import zulip
+
     from matrixzulipbridge.organization_room import OrganizationRoom
 
 
 class DirectRoom(UnderOrganizationRoom):
     name: str
     media: list[list[str]]
+    recipient_ids: list
     max_backfill_amount: int
     lazy_members: dict
 
     commands: CommandManager
 
     def init(self) -> None:
+        super().init()
+
         self.name = None
         self.media = []
-        self.lazy_members = {}  # allow lazy joining your own ghost for echo
+        self.recipient_ids = []
         self.max_backfill_amount = None
 
         self.commands = CommandManager()
-
-        if isinstance(self, DirectRoom):
-            cmd = CommandParser(prog="WHOIS", description="WHOIS the other user")
-            self.commands.register(cmd, self.cmd_whois)
 
         cmd = CommandParser(
             prog="BACKFILL",
@@ -69,7 +68,6 @@ class DirectRoom(UnderOrganizationRoom):
         self.commands.register(cmd, self.cmd_backfill)
 
         self.mx_register("m.room.message", self.on_mx_message)
-        self.mx_register("m.room.redaction", self.on_mx_redaction)
 
     def from_config(self, config: dict) -> None:
         super().from_config(config)
@@ -85,6 +83,9 @@ class DirectRoom(UnderOrganizationRoom):
         if "max_backfill_amount" in config:
             self.max_backfill_amount = config["max_backfill_amount"]
 
+        if "recipient_ids" in config:
+            self.recipient_ids = config["recipient_ids"]
+
     def to_config(self) -> dict:
         return {
             **(super().to_config()),
@@ -92,30 +93,68 @@ class DirectRoom(UnderOrganizationRoom):
             "organization_id": self.organization_id,
             "media": self.media[:5],
             "max_backfill_amount": self.max_backfill_amount,
+            "recipient_ids": self.recipient_ids,
         }
 
     @staticmethod
-    async def create(organization: "OrganizationRoom", name: str) -> "DirectRoom":
+    async def create(
+        organization: "OrganizationRoom",
+        zulip_recipients: dict,
+    ) -> "DirectRoom":
         logging.debug(
-            f"DirectRoom.create(organization='{organization.name}', name='{name}')"
+            f"DirectRoom.create(organization='{organization.name}', recipients='{zulip_recipients}'"
         )
-        raise NotImplementedError("Direct messaging")
+        mx_recipients = []
+        for user in zulip_recipients:
+            if user["id"] in organization.zulip_puppet_user_mxid:
+                mxid = organization.zulip_puppet_user_mxid[user["id"]]
 
-        # asyncio.ensure_future(room.create_mx(name))
-        # return room
+            else:
+                mxid = organization.serv.get_mxid_from_zulip_user_id(
+                    organization, user["id"]
+                )
+                if "full_name" in user:
+                    await organization.serv.cache_user(mxid, user["full_name"])
 
-    async def create_mx(self, name) -> None:
+            mx_recipients.append(mxid)
+            organization.zulip_users[user["id"]] = user
+
+        room = DirectRoom(
+            None,
+            organization.user_id,
+            organization.serv,
+            mx_recipients,
+            [],
+        )
+        room.name = ", ".join([user["full_name"] for user in zulip_recipients])
+        room.organization = organization
+        room.organization_id = organization.id
+        room.max_backfill_amount = organization.max_backfill_amount
+
+        room.recipient_ids = [user["id"] for user in zulip_recipients]
+
+        organization.serv.register_room(room)
+
+        recipient_ids = frozenset(room.recipient_ids)
+        organization.direct_rooms[recipient_ids] = room
+
+        asyncio.ensure_future(room.create_mx(mx_recipients))
+        return room
+
+    async def create_mx(self, user_mxids) -> None:
         if self.id is None:
-            mx_user_id = await self.organization.serv.ensure_zulip_user_id(
-                self.organization.name, name, update_cache=False
-            )
             self.id = await self.organization.serv.create_room(
-                f"{name} ({self.organization.name})",
-                f"Private chat with {name} on {self.organization.name}",
-                [self.organization.user_id, mx_user_id],
+                f"{self.name} ({self.organization.name})",
+                f"Direct messages with {self.name} from {self.organization.name}",
+                user_mxids,
+                is_direct=True,
             )
             self.serv.register_room(self)
-            await self.az.intent.user(mx_user_id).ensure_joined(self.id)
+
+            for user_mxid in user_mxids:
+                if self.serv.is_puppet(user_mxid):
+                    await self.az.intent.user(user_mxid).ensure_joined(self.id)
+
             await self.save()
             # start event queue now that we have an id
             self._queue.start()
@@ -131,10 +170,7 @@ class DirectRoom(UnderOrganizationRoom):
         if self.name is None:
             return False
 
-        if self.user_id is None:
-            return False
-
-        if not self.in_room(self.user_id):
+        if len(self.recipient_ids) == 0:
             return False
 
         return True
@@ -188,79 +224,95 @@ class DirectRoom(UnderOrganizationRoom):
         else:
             super().send_notice_html(text=text, user_id=user_id)
 
-    async def _send_message(self, event, prefix=""):
-        raise NotImplementedError("Private messages to Zulip")
-
+    @connected
     async def on_mx_message(self, event) -> None:
-        if event.sender != self.user_id:
+        await self.check_if_nobody_left()
+
+        sender = str(event.sender)
+        (name, server) = sender.split(":", 1)
+
+        # ignore self messages
+        if sender == self.serv.user_id:
             return
 
+        # prevent re-sending federated messages back
         if (
-            self.organization is None
-            or self.organization.zulip is None
-            or not self.organization.zulip.has_connected
+            name.startswith("@" + self.serv.puppet_prefix)
+            and server == self.serv.server_name
         ):
-            self.send_notice("Not connected to organization.")
             return
 
-        if str(event.content.msgtype) == "m.emote":
-            await self._send_message(event)
-        elif str(event.content.msgtype) in ["m.image", "m.file", "m.audio", "m.video"]:
-            self.organization.conn.privmsg(
-                self.name, self.serv.mxc_to_url(event.content.url, event.content.body)
-            )
-            self.react(event.event_id, "\U0001F517")  # link
-            self.media.append([event.event_id, event.content.url])
-            await self.save()
-        elif str(event.content.msgtype) == "m.text":
-            # allow commanding the appservice in rooms
-            match = re.match(r"^\s*@?([^:,\s]+)[\s:,]*(.+)$", event.content.body)
-            if (
-                match
-                and match.group(1).lower() == self.serv.registration["sender_localpart"]
-            ):
-                try:
-                    await self.commands.trigger(match.group(2))
-                except CommandParserError as e:
-                    self.send_notice(str(e))
-                return
-
-            await self._send_message(event)
+        if event.content.msgtype.is_media:
+            raise NotImplementedError("Sending media to Zulip")
+        elif event.content.msgtype in (
+            MessageType.EMOTE,
+            MessageType.TEXT,
+            MessageType.NOTICE,
+        ):
+            await self._relay_message(event)
 
         await self.az.intent.send_receipt(event.room_id, event.event_id)
 
-    async def on_mx_redaction(self, event) -> None:
-        for media in self.media:
-            if media[0] == event.redacts:
-                url = urlparse(media[1])
-                if self.serv.synapse_admin:
-                    try:
-                        await self.az.intent.api.request(
-                            Method.POST,
-                            SynapseAdminPath.v1.media.quarantine[url.netloc][
-                                url.path[1:]
-                            ],
-                        )
+    async def _relay_message(self, event):
+        prefix = ""
+        client = self.organization.zulip_puppets.get(event.sender)
+        if not client:
+            logging.error(
+                f"Matrix user ({event.sender}) sent a DM without having logged in to Zulip"
+            )
+            return
 
-                        self.organization.send_notice(
-                            f"Associated media {media[1]} for redacted event {event.redacts} "
-                            + f"in room {self.name} was quarantined."
-                        )
-                    except Exception:
-                        self.organization.send_notice(
-                            f"Failed to quarantine media! Associated media {media[1]} "
-                            + f"for redacted event {event.redacts} in room {self.name} is left available."
-                        )
-                else:
-                    self.organization.send_notice(
-                        f"No permission to quarantine media! Associated media {media[1]} "
-                        + f"for redacted event {event.redacts} in room {self.name} is left available."
-                    )
-                return
+        # try to find out if this was a reply
+        reply_to = None
+        if event.content.get_reply_to():
+            rel_event = event
 
-    @connected
-    async def cmd_whois(self, _args) -> None:
-        self.organization.conn.whois(f"{self.name} {self.name}")
+            # traverse back all edits
+            while rel_event.content.get_edit():
+                rel_event = await self.az.intent.get_event(
+                    self.id, rel_event.content.get_edit()
+                )
+
+            # see if the original is a reply
+            if rel_event.content.get_reply_to():
+                reply_to = await self.az.intent.get_event(
+                    self.id, rel_event.content.get_reply_to()
+                )
+
+        if event.content.get_edit():
+            message = await self._process_event_content(event, prefix, reply_to)
+            self.last_messages[event.sender] = event
+        else:
+            # keep track of the last message
+            self.last_messages[event.sender] = event
+            message = await self._process_event_content(event, prefix)
+
+        request = {
+            "type": "private",
+            "to": self.recipient_ids,
+            "content": message,
+        }
+
+        result = client.send_message(request)
+        if result["result"] != "success":
+            logging.error(f"Failed sending message to Zulip: {result['msg']}")
+            return
+
+        self.organization.messages[result["id"]] = event.event_id
+        await self.organization.save()
+        await self.save()
+
+    async def check_if_nobody_left(self):
+        """Invite back everyone who left"""
+        mx_recipients = []
+        for user_id in self.recipient_ids:
+            if user_id not in self.organization.zulip_puppet_user_mxid:
+                continue
+            mx_recipients.append(self.organization.zulip_puppet_user_mxid[user_id])
+        for mxid in mx_recipients:
+            if mxid in self.members:
+                continue
+            await self.az.intent.invite_user(self.id, mxid)
 
     async def cmd_backfill(self, args) -> None:
         if args.amount:
@@ -273,3 +325,41 @@ class DirectRoom(UnderOrganizationRoom):
     async def cmd_upgrade(self, args) -> None:
         if not args.undo:
             await self._attach_space()
+
+    async def backfill_messages(self):
+        if not self.organization.max_backfill_amount:
+            return
+        request = {
+            "anchor": "newest",
+            "num_before": self.organization.max_backfill_amount,
+            "num_after": 0,
+            "narrow": [
+                {"operator": "dm", "operand": self.recipient_ids},
+            ],
+        }
+
+        client = self.get_any_zulip_client()
+        if client is None:
+            return
+
+        result = client.get_messages(request)
+
+        if result["result"] != "success":
+            logging.error(f"Failed getting Zulip messages: {result['msg']}")
+            return
+
+        for message in result["messages"]:
+            if str(message["id"]) in self.organization.messages:
+                continue
+            self.organization.dm_message(message)
+
+    def get_any_zulip_client(self) -> "zulip.Client":
+        for recipient_id in self.recipient_ids:
+            mxid = self.organization.zulip_puppet_user_mxid.get(recipient_id)
+            if not mxid:
+                continue
+            client = self.organization.zulip_puppets.get(mxid)
+            if client is None:
+                continue
+            return client
+        return None

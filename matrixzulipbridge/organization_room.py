@@ -33,6 +33,7 @@ from argparse import Namespace
 from typing import TYPE_CHECKING, Any
 
 import zulip
+from bidict import bidict
 from mautrix.util.bridge_state import BridgeStateEvent
 
 from matrixzulipbridge import __version__
@@ -68,10 +69,12 @@ class OrganizationRoom(Room):
     zulip_users: dict[int, dict]
     zulip_puppet_login: dict[str, dict]
     zulip_puppets: dict[str, "zulip.Client"]
+    zulip_puppet_user_mxid: bidict[str, str]
 
     # state
     commands: CommandManager
     rooms: dict[str, Room]
+    direct_rooms: dict[frozenset, "DirectRoom"]
     connecting: bool
     backoff: int
     backoff_task: Any
@@ -102,10 +105,12 @@ class OrganizationRoom(Room):
         self.zulip_users = {}
         self.zulip_puppet_login = {}
         self.zulip_puppets = {}
+        self.zulip_puppet_user_mxid = bidict()
 
         self.commands = CommandManager()
         self.zulip = None
         self.rooms = {}
+        self.direct_rooms = {}
         self.connlock = asyncio.Lock()
         self.disconnect = True
         self.space = None
@@ -404,6 +409,8 @@ class OrganizationRoom(Room):
         stream = args.stream
 
         for room in self.rooms.values():
+            if not isinstance(room, StreamRoom):
+                continue
             if stream.lower() == room.name:
                 self.send_notice(f"Stream {stream} already exists at {room.id}.")
                 return
@@ -419,6 +426,8 @@ class OrganizationRoom(Room):
         removed_rooms = False
 
         for room in self.rooms.values():
+            if not isinstance(room, StreamRoom):
+                continue
             if room.name.lower() == stream:
                 removed_rooms = True
 
@@ -595,16 +604,18 @@ class OrganizationRoom(Room):
     async def post_init(self) -> None:
         # attach loose sub-rooms to us
         for room_type in [DirectRoom, StreamRoom, PersonalRoom]:
-            for room in self.serv.find_rooms(room_type, self.user_id):
-                if room.organization_id == self.id:
-                    room.organization = self
+            for room in self.serv.find_rooms(room_type, organization_id=self.id):
+                room.organization = self
 
-                    logging.debug(f"{self.id} attaching {room.id}")
-                    match room:
-                        case StreamRoom():
-                            self.rooms[room.stream_id] = room
-                        case _:
-                            self.rooms[room.id] = room
+                logging.debug(f"{self.id} attaching {room.id}")
+                match room:
+                    case StreamRoom():
+                        self.rooms[room.stream_id] = room
+                    case DirectRoom():
+                        self.direct_rooms[frozenset(room.recipient_ids)] = room
+                    case _:
+                        self.rooms[room.id] = room
+        logging.debug(self.direct_rooms)
 
         self.post_init_done = True
 
@@ -719,6 +730,24 @@ class OrganizationRoom(Room):
         """
         client = zulip.Client(email, api_key=api_key, site=self.site)
         self.zulip_puppets[user_id] = client
+        profile = client.get_profile()
+        self.zulip_puppet_user_mxid[profile["user_id"]] = user_id
+
+        # Create event queue for receiving DMs
+        asyncio.get_running_loop().run_in_executor(
+            None,
+            functools.partial(
+                client.call_on_each_event,
+                lambda event: self.on_puppet_event(  # pylint: disable=unnecessary-lambda
+                    event
+                ),
+                apply_markdown=True,
+                event_types=["message"],  # required for narrow
+                narrow=[["is", "dm"]],
+            ),
+        )
+        await self.save()
+        return profile
 
     async def _sync_permissions(self):
         # Owner should have the highest permissions (after bot)
@@ -755,7 +784,7 @@ class OrganizationRoom(Room):
         if update_cache or user_id not in self.zulip_users:
             result = self.zulip.get_user_by_id(user_id)
             if result["result"] != "success":
-                raise Exception(f"Could not get Zulip user {user_id}: {result['msg']}")
+                return None
             self.zulip_users[user_id] = result["user"]
         return self.zulip_users[user_id]
 
@@ -774,3 +803,21 @@ class OrganizationRoom(Room):
                 continue
 
             await room.backfill_messages()
+
+        for room in self.direct_rooms.values():
+            await room.backfill_messages()
+
+    def on_puppet_event(self, event) -> None:
+        if event["type"] != "message":
+            return
+        self.dm_message(event["message"])
+
+    def dm_message(self, message) -> None:
+        event = {"type": "_dm_message", "message": message}
+        self._queue.enqueue(event)
+
+    async def _flush_event(self, event: dict):
+        if event["type"] == "_dm_message":
+            await self.zulip_handler.handle_dm_message(event["message"])
+        else:
+            return await super()._flush_event(event)

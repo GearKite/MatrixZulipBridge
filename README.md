@@ -12,7 +12,7 @@ Join the Matrix room [#MatrixZulipBridge:shema.lv](https://matrix.to/#/#matrixzu
 
 - [x] Streams
 - [x] Zulip topics - Matrix threads
-- [ ] Direct messages
+- [x] Direct messages
 - [x] Formatted text\* (not all of Zulip's formatting)
 - [x] Matrix puppets
 - [x] Zulip puppets
