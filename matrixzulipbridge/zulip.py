@@ -23,8 +23,10 @@
 #
 import logging
 from typing import TYPE_CHECKING, Optional
+from urllib.parse import urljoin
 
 import emoji
+from bs4 import BeautifulSoup
 from markdownify import markdownify
 
 from matrixzulipbridge.direct_room import DirectRoom
@@ -84,10 +86,7 @@ class ZulipEventHandler:
             self.organization, event["sender_id"]
         )
 
-        formatted_message: str = event["content"]
-        formatted_message = emoji.emojize(formatted_message, language="alias")
-
-        message = markdownify(formatted_message).rstrip()
+        message, formatted_message = self._process_message_content(event["content"])
 
         custom_data = {
             "zulip_topic": topic,
@@ -207,6 +206,13 @@ class ZulipEventHandler:
         return None
 
     def _process_message_content(self, html: str):
-        formatted_message = emoji.emojize(html, language="alias")
+        # Replace Zulip file upload relative URLs with absolute
+        soup = BeautifulSoup(html, "html.parser")
+        for a_tag in soup.find_all("a"):
+            href = a_tag.get("href")
+            absolute_url = urljoin(self.organization.server["realm_uri"], href)
+            a_tag["href"] = absolute_url
+
+        formatted_message = emoji.emojize(soup.decode(), language="alias")
         message = markdownify(formatted_message).rstrip()
         return message, formatted_message

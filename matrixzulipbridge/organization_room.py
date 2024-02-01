@@ -86,6 +86,7 @@ class OrganizationRoom(Room):
     organization: "OrganizationRoom"
 
     profile: dict
+    server: dict
     messages: dict[str, str]
     permissions: dict[str, str]
     zulip_handler: "ZulipEventHandler"
@@ -118,6 +119,7 @@ class OrganizationRoom(Room):
         self.organization = self
 
         self.profile = None
+        self.server = None
         self.messages = {}
         self.permissions = {}
         self.zulip_handler = None
@@ -664,6 +666,7 @@ class OrganizationRoom(Room):
                 self.connected_at = asyncio.get_running_loop().time()
 
                 self.profile = self.zulip.get_profile()
+                self.server = self.zulip.get_server_settings()
 
                 self.zulip_handler = ZulipEventHandler(self)
 
