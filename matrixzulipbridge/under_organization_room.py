@@ -90,7 +90,12 @@ class UnderOrganizationRoom(Room):
     async def _process_event_content(self, event, prefix="", _reply_to=None):
         content = event.content
 
-        if content.formatted_body:
+        if content.msgtype.is_media:
+            media_url = self.serv.mxc_to_url(
+                mxc=event.content.url, filename=event.content.body
+            )
+            message = f"[{content.body}]({media_url})"
+        elif content.formatted_body:
             message = content.formatted_body
 
             if "m.mentions" in content:
