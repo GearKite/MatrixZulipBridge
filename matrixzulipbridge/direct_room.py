@@ -143,7 +143,7 @@ class DirectRoom(UnderOrganizationRoom):
         if self.id is None:
             self.id = await self.organization.serv.create_room(
                 f"{self.name} ({self.organization.name})",
-                f"Direct messaging with {self.name}",
+                f"Direct messages with {self.name} from {self.organization.name}",
                 user_mxids,
                 is_direct=True,
             )
