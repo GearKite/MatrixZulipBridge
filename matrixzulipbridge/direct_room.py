@@ -36,6 +36,8 @@ from matrixzulipbridge.room import InvalidConfigError
 from matrixzulipbridge.under_organization_room import UnderOrganizationRoom, connected
 
 if TYPE_CHECKING:
+    from typing import Iterable
+
     from matrixzulipbridge.organization_room import OrganizationRoom
 
 
@@ -96,44 +98,48 @@ class DirectRoom(UnderOrganizationRoom):
 
     @staticmethod
     async def create(
-        organization: "OrganizationRoom", recipients: list
+        organization: "OrganizationRoom",
+        zulip_recipients: "Iterable",
     ) -> "DirectRoom":
         logging.debug(
-            f"DirectRoom.create(organization='{organization.name}', recipients='{recipients}'"
+            f"DirectRoom.create(organization='{organization.name}', recipients='{zulip_recipients}'"
         )
-        user_mxids = []
-        for user in recipients:
+        zulip_recipients = frozenset(zulip_recipients)
+        mx_recipients = []
+        for user in zulip_recipients:
             if user["id"] in organization.zulip_puppet_user_mxid:
                 mxid = organization.zulip_puppet_user_mxid[user["id"]]
+
             else:
                 mxid = organization.serv.get_mxid_from_zulip_user_id(
                     organization, user["id"]
                 )
-                await organization.serv.cache_user(mxid, user["full_name"])
+                if "full_name" in user:
+                    await organization.serv.cache_user(mxid, user["full_name"])
 
-            user_mxids.append(mxid)
+            mx_recipients.append(mxid)
             organization.zulip_users[user["id"]] = user
 
         room = DirectRoom(
             None,
             organization.user_id,
             organization.serv,
-            user_mxids,
+            mx_recipients,
             [],
         )
-        room.name = ", ".join([user["full_name"] for user in recipients])
+        room.name = ", ".join([user["full_name"] for user in zulip_recipients])
         room.organization = organization
         room.organization_id = organization.id
         room.max_backfill_amount = organization.max_backfill_amount
 
-        room.recipient_ids = [user["id"] for user in recipients]
+        room.recipient_ids = [user["id"] for user in zulip_recipients]
 
         organization.serv.register_room(room)
 
         recipient_ids = frozenset(room.recipient_ids)
         organization.direct_rooms[recipient_ids] = room
 
-        asyncio.ensure_future(room.create_mx(user_mxids))
+        asyncio.ensure_future(room.create_mx(mx_recipients))
         return room
 
     async def create_mx(self, user_mxids) -> None:
@@ -221,6 +227,8 @@ class DirectRoom(UnderOrganizationRoom):
 
     @connected
     async def on_mx_message(self, event) -> None:
+        await self.check_if_nobody_left()
+
         sender = str(event.sender)
         (name, server) = sender.split(":", 1)
 
@@ -293,8 +301,19 @@ class DirectRoom(UnderOrganizationRoom):
 
         self.organization.messages[result["id"]] = event.event_id
         await self.organization.save()
-
         await self.save()
+
+    async def check_if_nobody_left(self):
+        """Invite back everyone who left"""
+        mx_recipients = []
+        for user_id in self.recipient_ids:
+            if user_id not in self.organization.zulip_puppet_user_mxid:
+                continue
+            mx_recipients.append(self.organization.zulip_puppet_user_mxid[user_id])
+        for mxid in mx_recipients:
+            if mxid in self.members:
+                continue
+            await self.az.intent.invite_user(self.id, mxid)
 
     async def cmd_backfill(self, args) -> None:
         if args.amount:

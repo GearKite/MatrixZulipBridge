@@ -33,6 +33,7 @@ from argparse import Namespace
 from typing import TYPE_CHECKING, Any
 
 import zulip
+from bidict import bidict
 from mautrix.util.bridge_state import BridgeStateEvent
 
 from matrixzulipbridge import __version__
@@ -68,7 +69,7 @@ class OrganizationRoom(Room):
     zulip_users: dict[int, dict]
     zulip_puppet_login: dict[str, dict]
     zulip_puppets: dict[str, "zulip.Client"]
-    zulip_puppet_user_mxid: dict[str, str]
+    zulip_puppet_user_mxid: bidict[str, str]
 
     # state
     commands: CommandManager
@@ -104,7 +105,7 @@ class OrganizationRoom(Room):
         self.zulip_users = {}
         self.zulip_puppet_login = {}
         self.zulip_puppets = {}
-        self.zulip_puppet_user_mxid = {}
+        self.zulip_puppet_user_mxid = bidict()
 
         self.commands = CommandManager()
         self.zulip = None
@@ -743,6 +744,8 @@ class OrganizationRoom(Room):
                 narrow=[["is", "dm"]],
             ),
         )
+        await self.save()
+        return profile
 
     async def _sync_permissions(self):
         # Owner should have the highest permissions (after bot)
@@ -779,7 +782,7 @@ class OrganizationRoom(Room):
         if update_cache or user_id not in self.zulip_users:
             result = self.zulip.get_user_by_id(user_id)
             if result["result"] != "success":
-                raise Exception(f"Could not get Zulip user {user_id}: {result['msg']}")
+                return None
             self.zulip_users[user_id] = result["user"]
         return self.zulip_users[user_id]
 
