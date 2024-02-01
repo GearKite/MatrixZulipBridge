@@ -199,6 +199,9 @@ class PersonalRoom(UnderOrganizationRoom):
                 return
 
             zulip_user = self.organization.get_zulip_user(user_zulip_id)
+            if not zulip_user:
+                self.send_notice(f"Can't find Zulip user with ID {user_zulip_id}")
+                return
             recipients.append(
                 {
                     "id": zulip_user["user_id"],
