@@ -36,8 +36,6 @@ from matrixzulipbridge.room import InvalidConfigError
 from matrixzulipbridge.under_organization_room import UnderOrganizationRoom, connected
 
 if TYPE_CHECKING:
-    from typing import Iterable
-
     from matrixzulipbridge.organization_room import OrganizationRoom
 
 
@@ -99,12 +97,11 @@ class DirectRoom(UnderOrganizationRoom):
     @staticmethod
     async def create(
         organization: "OrganizationRoom",
-        zulip_recipients: "Iterable",
+        zulip_recipients: dict,
     ) -> "DirectRoom":
         logging.debug(
             f"DirectRoom.create(organization='{organization.name}', recipients='{zulip_recipients}'"
         )
-        zulip_recipients = frozenset(zulip_recipients)
         mx_recipients = []
         for user in zulip_recipients:
             if user["id"] in organization.zulip_puppet_user_mxid:
