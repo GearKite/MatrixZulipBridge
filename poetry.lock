@@ -1417,7 +1417,18 @@ distro = "*"
 requests = {version = ">=0.12.1", extras = ["security"]}
 typing-extensions = ">=4.5.0"
 
+[[package]]
+name = "zulip-emoji-mapping"
+version = "1.0.1"
+description = "A Zulip emoji name mapping"
+optional = false
+python-versions = ">=3.8,<4.0"
+files = [
+    {file = "zulip_emoji_mapping-1.0.1-py3-none-any.whl", hash = "sha256:dc5f2d182e60f483e8e72286259e294e62f709e60016649f9c1efa953105e934"},
+    {file = "zulip_emoji_mapping-1.0.1.tar.gz", hash = "sha256:fbad112697d1ef039a50b05597f93c44f4bd5a5489f2abc9fb8e8f4e8409bd3f"},
+]
+
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "b8267f6b3c558c318de18f5eb4b21df8ade7a798de519b2517e8cdf35a5cfe94"
+content-hash = "d50196be96367bc2dd59f6e530f7e2250c493adb99f45c5418e887c31424ee9f"

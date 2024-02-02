@@ -21,6 +21,7 @@ coloredlogs = "^15"
 ruamel-yaml = "^0.18.5"
 pytest-cov = "^4.1.0"
 bidict = "^0.22.1"
+zulip-emoji-mapping = "^1.0.1"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23"
