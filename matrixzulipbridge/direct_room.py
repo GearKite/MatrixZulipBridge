@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Optional
 from bidict import bidict
 from mautrix.types import MessageType
 from mautrix.types.event import redaction
+from zulip_emoji_mapping import EmojiNotFoundException, ZulipEmojiMapping
 
 from matrixzulipbridge.command_parse import (
     CommandManager,
@@ -73,6 +74,7 @@ class DirectRoom(UnderOrganizationRoom):
 
         self.mx_register("m.room.message", self.on_mx_message)
         self.mx_register("m.room.redaction", self.on_mx_redaction)
+        self.mx_register("m.reaction", self.on_mx_reaction)
 
     def from_config(self, config: dict) -> None:
         super().from_config(config)
@@ -274,6 +276,40 @@ class DirectRoom(UnderOrganizationRoom):
 
         if result["result"] != "success":
             self.send_notice(f"Couldn't delete message on Zulip: {result['msg']}")
+
+    @connected
+    async def on_mx_reaction(self, event):
+        client = self.organization.zulip_puppets.get(event.sender)
+        # This only works for logged in users
+        if not client:
+            return
+        if event.content.relates_to.rel_type.value != "m.annotation":
+            return
+
+        reaction = event.content.relates_to.key
+
+        try:
+            emoji_name = ZulipEmojiMapping.get_emoji_name(reaction)
+        except EmojiNotFoundException:
+            emoji_name = reaction
+
+        event_id = event.content.relates_to.event_id
+
+        zulip_message_id = self.messages.inverse.get(event_id)
+        if not zulip_message_id:
+            logging.error(
+                f"Could not find a message to react to for {event_id}. Was it sent to Zulip?"
+            )
+            return
+
+        request = {
+            "message_id": zulip_message_id,
+            "emoji_name": emoji_name,
+        }
+
+        result = client.add_reaction(request)
+        if result["result"] != "success":
+            logging.debug(f"Failed adding reaction {emoji_name} to {zulip_message_id}!")
 
     async def _relay_message(self, event):
         prefix = ""
