@@ -55,7 +55,6 @@ class PersonalRoom(UnderOrganizationRoom):
         cmd = CommandParser(
             prog="LOGINZULIP",
             description="enable Zulip puppeting and login",
-            epilog=(),
         )
         cmd.add_argument("email", nargs="?", help="your Zulip account email")
         cmd.add_argument("api_key", nargs="?", help="your Zulip account API key")
@@ -64,7 +63,6 @@ class PersonalRoom(UnderOrganizationRoom):
         cmd = CommandParser(
             prog="LOGOUTZULIP",
             description="disable Zulip puppeting",
-            epilog=(),
         )
         self.commands.register(cmd, self.cmd_logoutzulip)
 

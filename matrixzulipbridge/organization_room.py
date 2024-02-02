@@ -138,7 +138,6 @@ class OrganizationRoom(Room):
         cmd = CommandParser(
             prog="SITE",
             description="set Zulip site",
-            epilog=(),
         )
         cmd.add_argument("site", nargs="?", help="new site")
         self.commands.register(cmd, self.cmd_site)
@@ -146,7 +145,6 @@ class OrganizationRoom(Room):
         cmd = CommandParser(
             prog="EMAIL",
             description="set Zulip bot email",
-            epilog=(),
         )
         cmd.add_argument("email", nargs="?", help="new bot email")
         self.commands.register(cmd, self.cmd_email)
@@ -154,7 +152,6 @@ class OrganizationRoom(Room):
         cmd = CommandParser(
             prog="APIKEY",
             description="set Zulip bot api key",
-            epilog=(),
         )
         cmd.add_argument("api_key", nargs="?", help="new API key")
         self.commands.register(cmd, self.cmd_apikey)
@@ -189,11 +186,11 @@ class OrganizationRoom(Room):
             prog="SUBSCRIBE",
             description="bridge a stream",
             epilog=(
-                "Manually subscribe to a stream and bridge it\n",
-                "\n",
-                "Any subscriptions will be persisted between reconnects.\n",
+                "Manually subscribe to a stream and bridge it\n"
                 "\n"
-                "Specifying a room will make the bridge join that room, instead of creating a new one\n",
+                "Any subscriptions will be persisted between reconnects.\n"
+                "\n"
+                "Specifying a room will make the bridge join that room, instead of creating a new one\n"
             ),
         )
         cmd.add_argument("stream", help="target stream")
