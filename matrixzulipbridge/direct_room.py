@@ -47,6 +47,7 @@ class DirectRoom(UnderOrganizationRoom):
     recipient_ids: list
     max_backfill_amount: int
     lazy_members: dict
+    messages: dict
 
     commands: CommandManager
 
@@ -57,6 +58,7 @@ class DirectRoom(UnderOrganizationRoom):
         self.media = []
         self.recipient_ids = []
         self.max_backfill_amount = None
+        self.messages = {}
 
         self.commands = CommandManager()
 
@@ -86,6 +88,9 @@ class DirectRoom(UnderOrganizationRoom):
         if "recipient_ids" in config:
             self.recipient_ids = config["recipient_ids"]
 
+        if "messages" in config and config["messages"]:
+            self.messages = config["messages"]
+
     def to_config(self) -> dict:
         return {
             **(super().to_config()),
@@ -94,6 +99,7 @@ class DirectRoom(UnderOrganizationRoom):
             "media": self.media[:5],
             "max_backfill_amount": self.max_backfill_amount,
             "recipient_ids": self.recipient_ids,
+            "messages": self.messages,
         }
 
     @staticmethod
@@ -296,7 +302,7 @@ class DirectRoom(UnderOrganizationRoom):
             logging.error(f"Failed sending message to Zulip: {result['msg']}")
             return
 
-        self.organization.messages[result["id"]] = event.event_id
+        self.messages[result["id"]] = event.event_id
         await self.organization.save()
         await self.save()
 
@@ -347,6 +353,8 @@ class DirectRoom(UnderOrganizationRoom):
             return
 
         for message in result["messages"]:
+            if str(message["id"]) in self.messages:
+                continue
             if str(message["id"]) in self.organization.messages:
                 continue
             self.organization.dm_message(message)

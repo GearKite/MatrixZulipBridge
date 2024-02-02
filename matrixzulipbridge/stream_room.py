@@ -380,8 +380,8 @@ class StreamRoom(DirectRoom):
             logging.error(f"Failed sending message to Zulip: {result['msg']}")
             return
 
-        self.organization.messages[result["id"]] = event.event_id
-        await self.organization.save()
+        self.messages[result["id"]] = event.event_id
+        await self.save()
 
         await self.save()
 
@@ -559,6 +559,8 @@ class StreamRoom(DirectRoom):
             return
 
         for message in result["messages"]:
+            if str(message["id"]) in self.messages:
+                continue
             if str(message["id"]) in self.organization.messages:
                 continue
             self.organization.zulip_handler.backfill_message(message)

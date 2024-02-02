@@ -64,9 +64,6 @@ class ZulipEventHandler:
             return
         if event["sender_id"] == self.organization.profile["user_id"]:
             return  # Ignore own messages
-        if event["id"] in self.organization.messages:
-            # Skip already forwarded messages
-            return
         # Prevent race condition when single message is received by multiple clients
         if event["id"] in self.messages:
             return
@@ -78,6 +75,10 @@ class ZulipEventHandler:
             logging.debug(
                 f"Received message from stream with no associated Matrix room: {event}"
             )
+            return
+
+        # Skip already forwarded messages
+        if event["id"] in room.messages:
             return
 
         topic = event["subject"]
@@ -108,9 +109,6 @@ class ZulipEventHandler:
     async def handle_dm_message(self, event: dict):
         if event["sender_id"] == self.organization.profile["user_id"]:
             return  # Ignore own messages
-        if event["id"] in self.organization.messages:
-            # Skip already forwarded messages
-            return
         # Prevent race condition when single message is received by multiple clients
         if event["id"] in self.messages:
             return
@@ -123,6 +121,10 @@ class ZulipEventHandler:
             room = await DirectRoom.create(
                 self.organization, event["display_recipient"]
             )
+
+        # Skip already forwarded messages
+        if event["id"] in room.messages:
+            return
 
         message, formatted_message = self._process_message_content(event["content"])
 
@@ -142,16 +144,8 @@ class ZulipEventHandler:
             custom_data=custom_data,
         )
 
-    def _handle_reaction(self, event: dict):
-        zulip_user_id = event["user_id"]
-
-        message_mxid = self.organization.messages.get(event["message_id"])
-        if message_mxid is None:
-            logging.warning(
-                f"Could not find message with Zulip ID: {event['message_id']}, it probably wasn't sent to Matrix."
-            )
-            return
-        # TODO: Implement
+    def _handle_reaction(self, _event: dict):
+        ...  # TODO: Implement
 
     def _handle_delete_message(self, event: dict):
         message_mxid = self._get_mxid_from_zulip_id(event["message_id"])
@@ -159,7 +153,7 @@ class ZulipEventHandler:
             return
         room = self._get_room_by_stream_id(event["stream_id"])
         room.redact(message_mxid, reason="Deleted on Zulip")
-        del self.organization.messages[str(event["message_id"])]
+        del room.messages[str(event["message_id"])]
 
     def _handle_subscription(self, event: dict):
         if not "stream_ids" in event:
@@ -190,12 +184,16 @@ class ZulipEventHandler:
             self.organization.zulip_users[user_id] |= event["person"]
 
     def _get_mxid_from_zulip_id(self, zulip_id: int | str):
-        try:
-            return self.organization.messages[str(zulip_id)]
-        except KeyError:
-            logging.debug(
-                f"Message with Zulip ID {zulip_id} not found, it probably wasn't sent to Matrix"
-            )
+        for room in self.organization.rooms.values():
+            if not isinstance(room, DirectRoom):
+                continue
+            mxid = room.messages.get(str(zulip_id))
+            if mxid is not None:
+                return mxid
+
+        logging.debug(
+            f"Message with Zulip ID {zulip_id} not found, it probably wasn't sent to Matrix"
+        )
 
     def _get_room_by_stream_id(self, stream_id: int) -> Optional["StreamRoom"]:
         for room in self.organization.rooms.values():

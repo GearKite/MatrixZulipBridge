@@ -329,10 +329,8 @@ class Room(ABC):
             match bridge_data.get("type"):
                 case "message":
                     # Is this efficient?
-                    self.organization.messages[
-                        str(bridge_data["zulip_message_id"])
-                    ] = event_id
-                    await self.organization.save()
+                    self.messages[str(bridge_data["zulip_message_id"])] = event_id
+                    await self.save()
 
                     if self.send_read_receipt:
                         # Send read receipt to Zulip
