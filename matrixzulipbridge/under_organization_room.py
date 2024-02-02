@@ -87,6 +87,22 @@ class UnderOrganizationRoom(Room):
 
         return True
 
+    async def join_existing_room(self, room_id: str):
+        self.id = await self.organization.az.intent.join_room(room_id)
+
+        if self.id is None:
+            self.organization.send_notice(f"Could not join room {room_id}")
+            return
+
+        self.serv.register_room(self)
+        await self.save()
+        # start event queue now that we have an id
+        self._queue.start()
+
+        # attach to organization space
+        if self.organization.space:
+            await self.organization.space.attach(self.id)
+
     async def _process_event_content(self, event, prefix="", _reply_to=None):
         content = event.content
 
