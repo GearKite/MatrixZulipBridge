@@ -6,6 +6,9 @@ authors = ["GearKite <emgh@em.id.lv>"]
 license = "AGPL-3.0-or-later"
 readme = "README.md"
 
+[tool.poetry.scripts]
+matrix-zulip-bridge = 'matrixzulipbridge.__main__:main'
+
 [tool.poetry.dependencies]
 python = "^3.10"
 zulip = "^0.9"
