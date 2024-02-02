@@ -154,7 +154,12 @@ class StreamRoom(DirectRoom):
         return True
 
     @staticmethod
-    async def create(organization: "OrganizationRoom", name: str) -> "StreamRoom":
+    async def create(
+        organization: "OrganizationRoom",
+        name: str,
+        backfill: int = None,
+        room_id: str = None,
+    ) -> "StreamRoom":
         logging.debug(
             f"StreamRoom.create(organization='{organization.name}', name='{name}'"
         )
@@ -171,7 +176,7 @@ class StreamRoom(DirectRoom):
         room.name = name.lower()
         room.organization = organization
         room.organization_id = organization.id
-        room.max_backfill_amount = organization.max_backfill_amount
+        room.max_backfill_amount = backfill or organization.max_backfill_amount
 
         result = organization.zulip.get_stream_id(name)
         room.stream_id = result.get("stream_id")
@@ -191,7 +196,11 @@ class StreamRoom(DirectRoom):
         organization.serv.register_room(room)
         organization.rooms[room.stream_id] = room
 
-        asyncio.ensure_future(room.create_mx(name))
+        if room_id is not None:
+            asyncio.ensure_future(room.join_existing_room(room_id))
+        else:
+            asyncio.ensure_future(room.create_mx(name))
+
         return room
 
     def from_config(self, config: dict) -> None:
@@ -532,6 +541,9 @@ class StreamRoom(DirectRoom):
             self._remove_puppet(mx_user_id, "Unsubcribed from stream")
 
     async def backfill_messages(self):
+        if self.max_backfill_amount == 0:
+            return
+
         request = {
             "anchor": "newest",
             "num_before": self.max_backfill_amount,

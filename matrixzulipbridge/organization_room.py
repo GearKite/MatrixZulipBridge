@@ -192,9 +192,15 @@ class OrganizationRoom(Room):
                 "Manually subscribe to a stream and bridge it\n",
                 "\n",
                 "Any subscriptions will be persisted between reconnects.\n",
+                "\n"
+                "Specifying a room will make the bridge join that room, instead of creating a new one\n",
             ),
         )
         cmd.add_argument("stream", help="target stream")
+        cmd.add_argument(
+            "backfill", nargs="?", help="number of messages to backfill", type=int
+        )
+        cmd.add_argument("room", nargs="?", help="room ID")
         self.commands.register(cmd, self.cmd_subscribe)
 
         cmd = CommandParser(
@@ -418,33 +424,36 @@ class OrganizationRoom(Room):
                 return
 
         self.zulip.add_subscriptions([{"name": stream}])
-        room = await StreamRoom.create(organization=self, name=stream)
+        room = await StreamRoom.create(
+            organization=self,
+            name=stream,
+            backfill=args.backfill,
+            room_id=args.room,
+        )
         await room.backfill_messages()
 
     @connected
     async def cmd_unsubscribe(self, args) -> None:
         stream = args.stream.lower()
 
-        removed_rooms = False
-
-        for room in self.rooms.values():
-            if not isinstance(room, StreamRoom):
+        room = None
+        for r in self.rooms.values():
+            if not isinstance(r, StreamRoom):
                 continue
-            if room.name.lower() == stream:
-                removed_rooms = True
+            if r.name.lower() == stream:
+                room = r
+                break
 
-                self.serv.unregister_room(room.id)
-                room.cleanup()
-                await self.serv.leave_room(room.id, room.members)
-                del self.rooms[room.stream_id]
-
-                self.zulip.remove_subscriptions([stream])
-                self.send_notice(
-                    f"Unsubscribed from {stream} and removed room {room.id}."
-                )
-
-        if not removed_rooms:
+        if room is None:
             self.send_notice("No room with that name exists.")
+
+        self.serv.unregister_room(room.id)
+        room.cleanup()
+        await self.serv.leave_room(room.id, room.members)
+        del self.rooms[room.stream_id]
+
+        self.zulip.remove_subscriptions([stream])
+        self.send_notice(f"Unsubscribed from {stream} and removed room {room.id}.")
 
     def get_fullname(self):
         if self.fullname:
