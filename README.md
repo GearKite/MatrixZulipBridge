@@ -19,7 +19,7 @@ Join the Matrix room [#MatrixZulipBridge:shema.lv](https://matrix.to/#/#matrixzu
 - [x] Message Media\* (only translating URIs)
 - [ ] Presence
 - [ ] Reactions
-- [x] Redactions\* (only for Zulip messages)
+- [x] Redactions\* (only from Matrix in DMs)
 - [x] Replies\* (badly formatted)
 - [ ] Typing indicators
 
