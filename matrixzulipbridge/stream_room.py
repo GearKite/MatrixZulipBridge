@@ -26,6 +26,7 @@ import logging
 from typing import TYPE_CHECKING, Optional
 
 from mautrix.types import MessageType
+from mautrix.types.event import redaction
 
 from matrixzulipbridge.command_parse import CommandParser
 from matrixzulipbridge.direct_room import DirectRoom
@@ -320,6 +321,19 @@ class StreamRoom(DirectRoom):
 
         await self.az.intent.send_receipt(event.room_id, event.event_id)
 
+    @connected
+    async def on_mx_redaction(self, event: redaction.RedactionEvent):
+        event_id = event.redacts
+
+        zulip_message_id = self.messages.inverse.get(event_id)
+        if not zulip_message_id:
+            return
+
+        result = self.organization.zulip.delete_message(zulip_message_id)
+
+        if result["result"] != "success":
+            self.send_notice(f"Couldn't delete message on Zulip: {result['msg']}")
+
     async def _relay_message(self, event, sender):
         prefix = ""
         client = self.organization.zulip_puppets.get(event.sender)
@@ -380,7 +394,7 @@ class StreamRoom(DirectRoom):
             logging.error(f"Failed sending message to Zulip: {result['msg']}")
             return
 
-        self.messages[result["id"]] = event.event_id
+        self.messages[str(result["id"])] = event.event_id
         await self.save()
 
         await self.save()

@@ -65,9 +65,9 @@ class ZulipEventHandler:
         if event["sender_id"] == self.organization.profile["user_id"]:
             return  # Ignore own messages
         # Prevent race condition when single message is received by multiple clients
-        if event["id"] in self.messages:
+        if str(event["id"]) in self.messages:
             return
-        self.messages.add(event["id"])
+        self.messages.add(str(event["id"]))
 
         room = self._get_room_by_stream_id(event["stream_id"])
 
@@ -78,7 +78,7 @@ class ZulipEventHandler:
             return
 
         # Skip already forwarded messages
-        if event["id"] in room.messages:
+        if str(event["id"]) in room.messages:
             return
 
         topic = event["subject"]
@@ -110,7 +110,7 @@ class ZulipEventHandler:
         if event["sender_id"] == self.organization.profile["user_id"]:
             return  # Ignore own messages
         # Prevent race condition when single message is received by multiple clients
-        if event["id"] in self.messages:
+        if str(event["id"]) in self.messages:
             return
         mx_user_id = self.organization.serv.get_mxid_from_zulip_user_id(
             self.organization, event["sender_id"]
@@ -123,7 +123,7 @@ class ZulipEventHandler:
             )
 
         # Skip already forwarded messages
-        if event["id"] in room.messages:
+        if str(event["id"]) in room.messages:
             return
 
         message, formatted_message = self._process_message_content(event["content"])
@@ -148,10 +148,12 @@ class ZulipEventHandler:
         ...  # TODO: Implement
 
     def _handle_delete_message(self, event: dict):
-        message_mxid = self._get_mxid_from_zulip_id(event["message_id"])
+        room = self._get_room_by_stream_id(event["stream_id"])
+
+        message_mxid = self._get_mxid_from_zulip_id(event["message_id"], room)
         if not message_mxid:
             return
-        room = self._get_room_by_stream_id(event["stream_id"])
+
         room.redact(message_mxid, reason="Deleted on Zulip")
         del room.messages[str(event["message_id"])]
 
@@ -183,7 +185,10 @@ class ZulipEventHandler:
                 return
             self.organization.zulip_users[user_id] |= event["person"]
 
-    def _get_mxid_from_zulip_id(self, zulip_id: int | str):
+    def _get_mxid_from_zulip_id(self, zulip_id: int | str, room: DirectRoom = None):
+        if room is not None:
+            return room.messages.get(str(zulip_id))
+
         for room in self.organization.rooms.values():
             if not isinstance(room, DirectRoom):
                 continue
