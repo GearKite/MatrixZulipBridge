@@ -51,6 +51,7 @@ class DirectRoom(UnderOrganizationRoom):
     max_backfill_amount: int
     lazy_members: dict
     messages: bidict
+    reactions: dict
 
     commands: CommandManager
 
@@ -62,6 +63,7 @@ class DirectRoom(UnderOrganizationRoom):
         self.recipient_ids = []
         self.max_backfill_amount = None
         self.messages = bidict()
+        self.reactions = {}
 
         self.commands = CommandManager()
 
@@ -96,6 +98,9 @@ class DirectRoom(UnderOrganizationRoom):
         if "messages" in config and config["messages"]:
             self.messages = bidict(config["messages"])
 
+        if "reactions" in config and config["reactions"]:
+            self.reactions = bidict(config["reactions"])
+
     def to_config(self) -> dict:
         return {
             **(super().to_config()),
@@ -105,6 +110,7 @@ class DirectRoom(UnderOrganizationRoom):
             "max_backfill_amount": self.max_backfill_amount,
             "recipient_ids": self.recipient_ids,
             "messages": dict(self.messages),
+            "reactions": self.reactions,
         }
 
     @staticmethod
@@ -266,16 +272,18 @@ class DirectRoom(UnderOrganizationRoom):
     async def on_mx_redaction(self, event: redaction.RedactionEvent):
         event_id = event.redacts
 
-        zulip_message_id = self.messages.inverse.get(event_id)
-        if not zulip_message_id:
-            return
-
         client = self.organization.zulip_puppets.get(event.sender)
 
-        result = client.delete_message(zulip_message_id)
+        if event_id in self.messages.inverse:
+            zulip_message_id = self.messages.inverse[event_id]
+            result = client.delete_message(zulip_message_id)
+        elif event_id in self.reactions:
+            result = client.remove_reaction(self.reactions[event_id])
+        else:
+            return
 
         if result["result"] != "success":
-            self.send_notice(f"Couldn't delete message on Zulip: {result['msg']}")
+            logging.debug(f"Couldn't redact event on Zulip: {result['msg']}")
 
     @connected
     async def on_mx_reaction(self, event):
@@ -310,6 +318,9 @@ class DirectRoom(UnderOrganizationRoom):
         result = client.add_reaction(request)
         if result["result"] != "success":
             logging.debug(f"Failed adding reaction {emoji_name} to {zulip_message_id}!")
+            return
+
+        self.reactions[event.event_id] = request
 
     async def _relay_message(self, event):
         prefix = ""
