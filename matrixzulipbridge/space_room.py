@@ -29,16 +29,14 @@ from mautrix.api import Method, Path
 from mautrix.types import SpaceChildStateEventContent
 from mautrix.types.event.type import EventType
 
-from matrixzulipbridge.room import Room
+from matrixzulipbridge.under_organization_room import UnderOrganizationRoom
 
 if TYPE_CHECKING:
     from matrixzulipbridge.organization_room import OrganizationRoom
 
 
-class SpaceRoom(Room):
+class SpaceRoom(UnderOrganizationRoom):
     name: str
-    organization: "OrganizationRoom"
-    organization_id: str
 
     # pending rooms to attach during space creation
     pending: list[str]
@@ -47,14 +45,11 @@ class SpaceRoom(Room):
         super().init()
 
         self.name = None
-        self.organization = None
-        self.organization_id = None
 
         self.pending = []
 
     def is_valid(self) -> bool:
-        # we need to know our organization
-        if self.organization_id is None:
+        if not super().is_valid():
             return False
 
         # we are valid as long as our user is in the room
@@ -131,18 +126,6 @@ class SpaceRoom(Room):
 
         for room_id in rooms:
             await self.attach(room_id)
-
-    def from_config(self, config: dict) -> None:
-        super().from_config(config)
-
-        if "organization_id" in config:
-            self.organization_id = config["organization_id"]
-
-    def to_config(self) -> dict:
-        return {
-            **(super().to_config()),
-            "organization_id": self.organization_id,
-        }
 
     def cleanup(self) -> None:
         try:
