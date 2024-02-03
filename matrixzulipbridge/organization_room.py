@@ -531,25 +531,20 @@ class OrganizationRoom(Room):
         else:
             self.send_notice("Not connected to server.")
 
-        pms = []
-        chans = []
-        plumbs = []
+        dms = []
+        streams = []
 
         for room in self.rooms.values():
-            match room:
-                case DirectRoom():
-                    pms.append(room.name)
-                case StreamRoom():
-                    chans.append(room.name)
+            if isinstance(room, StreamRoom):
+                streams.append(room.name)
+        for dm_room in self.direct_rooms.values():
+            dms.append(dm_room.name)
 
-        if len(chans) > 0:
-            self.send_notice(f"Channels: {', '.join(chans)}")
+        if len(streams) > 0:
+            self.send_notice(f"Streams: #{', #'.join(streams)}")
 
-        if len(plumbs) > 0:
-            self.send_notice(f"Plumbs: {', '.join(plumbs)}")
-
-        if len(pms) > 0:
-            self.send_notice(f"PMs: {', '.join(pms)}")
+        if len(dms) > 0:
+            self.send_notice(f"Open DMs: {len(dms)}")
 
     async def cmd_space(self, _args) -> None:
         if self.space is None:
