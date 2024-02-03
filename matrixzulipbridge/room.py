@@ -332,7 +332,7 @@ class Room(ABC):
                     self.messages[str(bridge_data["zulip_message_id"])] = event_id
                     await self.save()
 
-                    if self.send_read_receipt:
+                    if self.send_read_receipt and self.organization.zulip is not None:
                         # Send read receipt to Zulip
                         self.organization.zulip.update_message_flags(
                             {
