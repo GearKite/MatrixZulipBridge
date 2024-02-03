@@ -18,7 +18,7 @@ Join the Matrix room [#MatrixZulipBridge:shema.lv](https://matrix.to/#/#matrixzu
 - [x] Zulip puppets
 - [x] Message Media\* (only translating URIs)
 - [ ] Presence
-- [ ] Reactions
+- [x] Reactions
 - [x] Redactions\* (only from Matrix in DMs)
 - [x] Replies\* (badly formatted)
 - [ ] Typing indicators
