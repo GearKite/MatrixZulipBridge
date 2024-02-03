@@ -25,6 +25,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Optional
 
+from mautrix.errors import MBadState
 from mautrix.types import MessageType
 
 from matrixzulipbridge.command_parse import CommandParser
@@ -390,11 +391,74 @@ class StreamRoom(DirectRoom):
 
     @connected
     async def on_mx_ban(self, user_id: "UserID") -> None:
-        pass
+        if not self.organization.relay_moderation:
+            return
+        zulip_user_id = self.organization.get_zulip_user_id_from_mxid(user_id)
+
+        if zulip_user_id is None:
+            return
+
+        if zulip_user_id in self.organization.deactivated_users:
+            return
+
+        result = self.organization.zulip.deactivate_user_by_id(zulip_user_id)
+        if result["result"] != "success":
+            self.organization.send_notice(
+                f"Unable to deactivate {user_id}: {result['msg']}"
+            )
+            return
+        self.organization.deactivated_users.add(zulip_user_id)
+
+        self.organization.delete_zulip_puppet(user_id)
+
+        rooms = list(self.organization.rooms.values()) + list(
+            self.organization.direct_rooms.values()
+        )
+
+        for room in rooms:
+            if room == self:
+                continue
+            if not isinstance(room, DirectRoom):
+                continue
+            if type(room) == DirectRoom:  # pylint: disable=unidiomatic-typecheck
+                if zulip_user_id not in room.recipient_ids:
+                    continue
+            await self.az.intent.ban_user(room.id, user_id, "account deactivated")
 
     @connected
     async def on_mx_unban(self, user_id: "UserID") -> None:
-        pass
+        if not self.organization.relay_moderation:
+            return
+        zulip_user_id = self.organization.get_zulip_user_id_from_mxid(user_id)
+
+        if zulip_user_id is None:
+            return
+
+        if zulip_user_id not in self.organization.deactivated_users:
+            return
+
+        result = self.organization.zulip.reactivate_user_by_id(zulip_user_id)
+        if result["result"] != "success":
+            self.organization.send_notice(
+                f"Unable to reactivate {user_id}: {result['msg']}"
+            )
+            return
+        self.organization.deactivated_users.remove(zulip_user_id)
+
+        # we don't need to unban puppets
+        if self.serv.is_puppet(user_id):
+            return
+        for room in self.organization.rooms.values():
+            if not isinstance(room, DirectRoom):
+                continue
+            if room == self:
+                continue
+            try:
+                await self.az.intent.unban_user(
+                    room.id, user_id, "unbanned in another room"
+                )
+            except MBadState:
+                pass
 
     @connected
     async def on_mx_leave(self, user_id: "UserID") -> None:

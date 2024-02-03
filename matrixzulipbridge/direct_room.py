@@ -135,8 +135,8 @@ class DirectRoom(UnderOrganizationRoom):
         )
         mx_recipients = []
         for user in zulip_recipients:
-            if user["id"] in organization.zulip_puppet_user_mxid:
-                mxid = organization.zulip_puppet_user_mxid[user["id"]]
+            if str(user["id"]) in organization.zulip_puppet_user_mxid:
+                mxid = organization.zulip_puppet_user_mxid[str(user["id"])]
 
             else:
                 mxid = organization.serv.get_mxid_from_zulip_user_id(
@@ -146,7 +146,6 @@ class DirectRoom(UnderOrganizationRoom):
                     await organization.serv.cache_user(mxid, user["full_name"])
 
             mx_recipients.append(mxid)
-            organization.zulip_users[user["id"]] = user
 
         room = DirectRoom(
             None,
@@ -450,9 +449,9 @@ class DirectRoom(UnderOrganizationRoom):
         """Invite back everyone who left"""
         mx_recipients = []
         for user_id in self.recipient_ids:
-            if user_id not in self.organization.zulip_puppet_user_mxid:
+            if str(user_id) not in self.organization.zulip_puppet_user_mxid:
                 continue
-            mx_recipients.append(self.organization.zulip_puppet_user_mxid[user_id])
+            mx_recipients.append(self.organization.zulip_puppet_user_mxid[str(user_id)])
         for mxid in mx_recipients:
             if mxid in self.members:
                 continue
@@ -501,7 +500,7 @@ class DirectRoom(UnderOrganizationRoom):
 
     def get_any_zulip_client(self) -> "zulip.Client":
         for recipient_id in self.recipient_ids:
-            mxid = self.organization.zulip_puppet_user_mxid.get(recipient_id)
+            mxid = self.organization.zulip_puppet_user_mxid.get(str(recipient_id))
             if not mxid:
                 continue
             client = self.organization.zulip_puppets.get(mxid)

@@ -30,7 +30,7 @@ import json
 import logging
 import re
 from argparse import Namespace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import zulip
 from bidict import bidict
@@ -94,6 +94,8 @@ class OrganizationRoom(Room):
     permissions: dict[str, str]
     zulip_handler: "ZulipEventHandler"
     max_backfill_amount: int
+    relay_moderation: bool
+    deactivated_users: set["ZulipUserID"]
 
     def init(self):
         self.name = None
@@ -127,6 +129,8 @@ class OrganizationRoom(Room):
         self.permissions = {}
         self.zulip_handler = None
         self.max_backfill_amount = 100
+        self.relay_moderation = True
+        self.deactivated_users = set()
 
         cmd = CommandParser(
             prog="FULLNAME",
@@ -257,6 +261,23 @@ class OrganizationRoom(Room):
             description="create a personal room",
         )
         self.commands.register(cmd, self.cmd_personalroom)
+        cmd = CommandParser(
+            prog="RELAYMODERATION",
+            description="Whether to relay bans to Zulip",
+            epilog="When a user is banned in one room, their Zulip account is deactivated and removed from all rooms.",
+        )
+        group = cmd.add_mutually_exclusive_group()
+        group.add_argument(
+            "--on",
+            help="turn relaying moderation on",
+            action="store_true",
+        )
+        group.add_argument(
+            "--off",
+            help="turn relaying moderation off",
+            action="store_true",
+        )
+        self.commands.register(cmd, self.cmd_relaymoderation)
 
         self.mx_register("m.room.message", self.on_mx_message)
 
@@ -588,6 +609,18 @@ class OrganizationRoom(Room):
         await PersonalRoom.create(self, self.user_id)
         self.send_notice("Personal room created")
 
+    async def cmd_relaymoderation(self, args) -> None:
+        if args.on:
+            self.relay_moderation = True
+            await self.save()
+        elif args.off:
+            self.relay_moderation = False
+            await self.save()
+
+        self.send_notice(
+            f"Relaying moderation is {'enabled' if self.relay_moderation else 'disabled'}",
+        )
+
     async def connect(self) -> None:
         if not self.is_valid():
             logging.warning(
@@ -718,10 +751,20 @@ class OrganizationRoom(Room):
         self.send_notice("Connection aborted.")
 
     async def _on_connect(self):
+        await self._get_users()
         await self._login_zulip_puppets()
         await self._sync_permissions()
         await self._sync_all_room_members()
         await self.backfill_messages()
+
+    async def _get_users(self):
+        result = self.zulip.get_members()
+        if result["result"] != "success":
+            raise Exception(f"Could not get Zulip users: {result['msg']}")
+        for user in result["members"]:
+            self.zulip_users[user["user_id"]] = user
+            if not user["is_active"]:
+                self.deactivated_users.add(str(user["user_id"]))
 
     async def _login_zulip_puppets(self):
         for user_id, login in self.zulip_puppet_login.items():
@@ -738,7 +781,9 @@ class OrganizationRoom(Room):
         client = zulip.Client(email, api_key=api_key, site=self.site)
         self.zulip_puppets[user_id] = client
         profile = client.get_profile()
-        self.zulip_puppet_user_mxid[profile["user_id"]] = user_id
+        if "user_id" not in profile:
+            return
+        self.zulip_puppet_user_mxid[str(profile["user_id"])] = user_id
 
         # Create event queue for receiving DMs
         asyncio.get_running_loop().run_in_executor(
@@ -755,6 +800,14 @@ class OrganizationRoom(Room):
         )
         await self.save()
         return profile
+
+    def delete_zulip_puppet(self, user_id: "UserID"):
+        if user_id in self.zulip_puppets:
+            del self.zulip_puppets[user_id]
+        if user_id in self.zulip_puppet_user_mxid.inv:
+            del self.zulip_puppet_user_mxid.inv[user_id]
+        if user_id in self.zulip_puppet_login:
+            del self.zulip_puppet_login[user_id]
 
     async def _sync_permissions(self):
         # Owner should have the highest permissions (after bot)
@@ -795,12 +848,17 @@ class OrganizationRoom(Room):
             self.zulip_users[user_id] = result["user"]
         return self.zulip_users[user_id]
 
-    def get_zulip_user_id_from_mxid(self, mxid: "UserID") -> "ZulipUserID":
-        ret = re.search(
-            rf"@{self.serv.puppet_prefix}{self.name.lower()}{self.serv.puppet_separator}(\d+):{self.serv.server_name}",
-            mxid,
-        )
-        return ret.group(1)
+    def get_zulip_user_id_from_mxid(self, mxid: "UserID") -> Optional["ZulipUserID"]:
+        if self.serv.is_puppet(mxid):
+            ret = re.search(
+                rf"@{self.serv.puppet_prefix}{self.name.lower()}{self.serv.puppet_separator}(\d+):{self.serv.server_name}",
+                mxid,
+            )
+            return ret.group(1)
+        elif mxid in self.zulip_puppet_user_mxid.inv:
+            return self.zulip_puppet_user_mxid.inv[mxid]
+        else:
+            return None
 
     async def backfill_messages(self):
         for room in self.rooms.values():

@@ -35,7 +35,7 @@ from mautrix.types.event.type import EventType
 from matrixzulipbridge.event_queue import EventQueue
 
 if TYPE_CHECKING:
-    from mautrix.types import Event, EventID, RoomID, UserID
+    from mautrix.types import Event, EventID, RoomID, StateEvent, UserID
 
     from matrixzulipbridge.__main__ import BridgeAppService
     from matrixzulipbridge.organization_room import OrganizationRoom
@@ -157,7 +157,7 @@ class Room(ABC):
     async def _on_mx_unhandled_event(self, event: "Event") -> None:
         pass
 
-    async def _on_mx_room_member(self, event: "Event") -> None:
+    async def _on_mx_room_member(self, event: "StateEvent") -> None:
         if (
             event.content.membership in [Membership.LEAVE, Membership.BAN]
             and event.state_key in self.members
@@ -174,8 +174,11 @@ class Room(ABC):
                 )
 
         if event.content.membership == Membership.LEAVE:
-            if event.state_key in self.bans:
-                self.bans.remove(event.state_key)
+            if event.prev_content.membership == Membership.BAN:
+                try:
+                    self.bans.remove(event.state_key)
+                except ValueError:
+                    pass
                 await self.on_mx_unban(event.state_key)
             else:
                 await self.on_mx_leave(event.state_key)
