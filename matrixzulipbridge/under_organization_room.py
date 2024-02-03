@@ -39,6 +39,8 @@ from mautrix.types.event.type import EventType
 from matrixzulipbridge.room import InvalidConfigError, Room
 
 if TYPE_CHECKING:
+    from mautrix.types import MessageEvent, RoomID
+
     from matrixzulipbridge.organization_room import OrganizationRoom
 
 
@@ -59,7 +61,7 @@ class UnderOrganizationRoom(Room):
     """Base class for all rooms under an organization"""
 
     organization: Optional["OrganizationRoom"]
-    organization_id: str
+    organization_id: "RoomID"
     force_forward: bool
 
     def init(self) -> None:
@@ -87,7 +89,7 @@ class UnderOrganizationRoom(Room):
 
         return True
 
-    async def join_existing_room(self, room_id: str):
+    async def join_existing_room(self, room_id: "RoomID"):
         self.id = await self.organization.az.intent.join_room(room_id)
 
         if self.id is None:
@@ -103,7 +105,9 @@ class UnderOrganizationRoom(Room):
         if self.organization.space:
             await self.organization.space.attach(self.id)
 
-    async def _process_event_content(self, event, prefix="", _reply_to=None):
+    async def _process_event_content(
+        self, event: "MessageEvent", prefix: str = "", _reply_to=None
+    ):
         content = event.content
 
         if content.msgtype.is_media:

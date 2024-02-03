@@ -30,6 +30,7 @@ from mautrix.errors import MNotFound
 
 if TYPE_CHECKING:
     from mautrix.appservice import AppService as MauService
+    from mautrix.types import RoomID, UserID
 
     from matrixzulipbridge.room import Room
 
@@ -37,7 +38,7 @@ if TYPE_CHECKING:
 class AppService(ABC):
     az: "MauService"
 
-    user_id: str
+    user_id: "UserID"
     server_name: str
     config: dict
 
@@ -54,11 +55,11 @@ class AppService(ABC):
         self,
         name: str,
         topic: str,
-        invite: list[str],
+        invite: list["UserID"],
         restricted: str = None,
         permissions: dict = None,
         is_direct: bool = False,
-    ) -> str:
+    ) -> "RoomID":
         if permissions is None:
             permissions = {}
 
@@ -117,5 +118,5 @@ class AppService(ABC):
         pass
 
     @abstractmethod
-    def find_rooms(self, rtype=None, user_id: str = None) -> list["Room"]:
+    def find_rooms(self, rtype=None, user_id: "UserID" = None) -> list["Room"]:
         pass

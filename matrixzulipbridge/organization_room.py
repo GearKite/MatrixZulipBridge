@@ -53,7 +53,10 @@ from matrixzulipbridge.under_organization_room import connected
 from matrixzulipbridge.zulip import ZulipEventHandler
 
 if TYPE_CHECKING:
+    from mautrix.types import UserID
+
     from matrixzulipbridge.appservice import AppService
+    from matrixzulipbridge.types import ZulipUserID
 
 
 class OrganizationRoom(Room):
@@ -66,15 +69,15 @@ class OrganizationRoom(Room):
     email: str
     site: str
     zulip: "zulip.Client"
-    zulip_users: dict[int, dict]
-    zulip_puppet_login: dict[str, dict]
-    zulip_puppets: dict[str, "zulip.Client"]
-    zulip_puppet_user_mxid: bidict[str, str]
+    zulip_users: dict["ZulipUserID", dict]
+    zulip_puppet_login: dict["UserID", dict]
+    zulip_puppets: dict["UserID", "zulip.Client"]
+    zulip_puppet_user_mxid: bidict["ZulipUserID", "UserID"]
 
     # state
     commands: CommandManager
     rooms: dict[str, Room]
-    direct_rooms: dict[frozenset, "DirectRoom"]
+    direct_rooms: dict[frozenset["ZulipUserID"], "DirectRoom"]
     connecting: bool
     backoff: int
     backoff_task: Any
@@ -258,7 +261,7 @@ class OrganizationRoom(Room):
         self.mx_register("m.room.message", self.on_mx_message)
 
     @staticmethod
-    async def create(serv: "AppService", organization: dict, user_id: str, name):
+    async def create(serv: "AppService", organization: dict, user_id: "UserID", name):
         room_id = await serv.create_room(
             name, f"Organization room for {organization['name']}", [user_id]
         )
@@ -724,7 +727,7 @@ class OrganizationRoom(Room):
         for user_id, login in self.zulip_puppet_login.items():
             await self.login_zulip_puppet(user_id, login["email"], login["api_key"])
 
-    async def login_zulip_puppet(self, user_id: str, email: str, api_key: str):
+    async def login_zulip_puppet(self, user_id: "UserID", email: str, api_key: str):
         """Create a Zulip puppet
 
         Args:
@@ -784,7 +787,7 @@ class OrganizationRoom(Room):
                 continue
             asyncio.ensure_future(room.sync_zulip_members(stream["subscribers"]))
 
-    def get_zulip_user(self, user_id: int, update_cache: bool = False):
+    def get_zulip_user(self, user_id: "ZulipUserID", update_cache: bool = False):
         if update_cache or user_id not in self.zulip_users:
             result = self.zulip.get_user_by_id(user_id)
             if result["result"] != "success":
@@ -792,7 +795,7 @@ class OrganizationRoom(Room):
             self.zulip_users[user_id] = result["user"]
         return self.zulip_users[user_id]
 
-    def get_zulip_user_id_from_mxid(self, mxid: str) -> str:
+    def get_zulip_user_id_from_mxid(self, mxid: "UserID") -> "ZulipUserID":
         ret = re.search(
             rf"@{self.serv.puppet_prefix}{self.name.lower()}{self.serv.puppet_separator}(\d+):{self.serv.server_name}",
             mxid,
@@ -811,12 +814,12 @@ class OrganizationRoom(Room):
         for room in self.direct_rooms.values():
             await room.backfill_messages()
 
-    def on_puppet_event(self, event) -> None:
+    def on_puppet_event(self, event: dict) -> None:
         if event["type"] != "message":
             return
         self.dm_message(event["message"])
 
-    def dm_message(self, message) -> None:
+    def dm_message(self, message: dict) -> None:
         event = {"type": "_dm_message", "message": message}
         self._queue.enqueue(event)
 

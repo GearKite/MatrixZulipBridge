@@ -35,14 +35,17 @@ from matrixzulipbridge.direct_room import DirectRoom
 from matrixzulipbridge.under_organization_room import UnderOrganizationRoom
 
 if TYPE_CHECKING:
+    from mautrix.types import MessageEvent, UserID
+
     from matrixzulipbridge.organization_room import OrganizationRoom
+    from matrixzulipbridge.types import ZulipUserID
 
 
 class PersonalRoom(UnderOrganizationRoom):
     commands: CommandManager
 
-    owner_mxid: str
-    owner_zulip_id: str
+    owner_mxid: "UserID"
+    owner_zulip_id: "ZulipUserID"
 
     def init(self):
         super().init()
@@ -77,7 +80,7 @@ class PersonalRoom(UnderOrganizationRoom):
 
     @staticmethod
     async def create(
-        organization: "OrganizationRoom", user_mxid: str
+        organization: "OrganizationRoom", user_mxid: "UserID"
     ) -> "PersonalRoom":
         logging.debug(
             f"PersonalRoom.create(organization='{organization.name}', user_mxid='{user_mxid}'"
@@ -116,7 +119,7 @@ class PersonalRoom(UnderOrganizationRoom):
             "owner_zulip_id": self.owner_zulip_id,
         }
 
-    async def create_mx(self, user_mxid) -> None:
+    async def create_mx(self, user_mxid: "UserID") -> None:
         if self.id is None:
             self.id = await self.organization.serv.create_room(
                 f"{self.organization.name} (Personal room)",
@@ -215,7 +218,7 @@ class PersonalRoom(UnderOrganizationRoom):
         room = await DirectRoom.create(self.organization, recipients)
         self.send_notice("Created a DM room and invited you to it.")
 
-    async def on_mx_message(self, event) -> bool:
+    async def on_mx_message(self, event: "MessageEvent") -> bool:
         if str(event.content.msgtype) != "m.text" or event.sender == self.serv.user_id:
             return
 

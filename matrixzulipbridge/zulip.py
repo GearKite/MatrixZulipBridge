@@ -32,9 +32,11 @@ from zulip_emoji_mapping import EmojiNotFoundException, ZulipEmojiMapping
 
 from matrixzulipbridge.direct_room import DirectRoom
 from matrixzulipbridge.stream_room import StreamRoom
+from matrixzulipbridge.types import ZulipUserID
 
 if TYPE_CHECKING:
     from matrixzulipbridge.organization_room import OrganizationRoom
+    from matrixzulipbridge.types import ZulipMessageID, ZulipStreamID
 
 
 class ZulipEventHandler:
@@ -162,8 +164,6 @@ class ZulipEventHandler:
         except EmojiNotFoundException:
             reaction = event["emoji_name"]
 
-        print(event)
-
         if event["op"] == "add":
             message_event_id = room.messages[zulip_message_id]
             room.relay_zulip_react(
@@ -172,13 +172,13 @@ class ZulipEventHandler:
                 key=reaction,
                 zulip_message_id=zulip_message_id,
                 zulip_emoji_name=event["emoji_name"],
-                zulip_user_id=str(event["user_id"]),
+                zulip_user_id=ZulipUserID(event["user_id"]),
             )
         elif event["op"] == "remove":
             request = {
                 "message_id": zulip_message_id,
                 "emoji_name": event["emoji_name"],
-                "user_id": str(event["user_id"]),
+                "user_id": ZulipUserID(event["user_id"]),
             }
             frozen_request = frozenset(request.items())
 
@@ -228,7 +228,9 @@ class ZulipEventHandler:
                 return
             self.organization.zulip_users[user_id] |= event["person"]
 
-    def _get_mxid_from_zulip_id(self, zulip_id: int | str, room: DirectRoom = None):
+    def _get_mxid_from_zulip_id(
+        self, zulip_id: "ZulipMessageID", room: DirectRoom = None
+    ):
         if room is not None:
             return room.messages.get(str(zulip_id))
 
@@ -243,7 +245,9 @@ class ZulipEventHandler:
             f"Message with Zulip ID {zulip_id} not found, it probably wasn't sent to Matrix"
         )
 
-    def _get_room_by_stream_id(self, stream_id: int) -> Optional["StreamRoom"]:
+    def _get_room_by_stream_id(
+        self, stream_id: "ZulipStreamID"
+    ) -> Optional["StreamRoom"]:
         for room in self.organization.rooms.values():
             if not isinstance(room, StreamRoom):
                 continue
@@ -251,7 +255,9 @@ class ZulipEventHandler:
                 return room
         return None
 
-    def _get_room_by_message_id(self, message_id) -> Optional["DirectRoom"]:
+    def _get_room_by_message_id(
+        self, message_id: "ZulipMessageID"
+    ) -> Optional["DirectRoom"]:
         for room in self.organization.rooms.values():
             if not isinstance(room, DirectRoom):
                 continue

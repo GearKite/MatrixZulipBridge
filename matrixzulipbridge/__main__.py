@@ -33,7 +33,7 @@ import string
 import sys
 import urllib
 from fnmatch import fnmatch
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from mautrix.api import HTTPAPI, Method, Path, SynapseAdminPath
 from mautrix.appservice import AppService as MauService
@@ -65,6 +65,12 @@ try:  # Optionally load coloredlogs
     import coloredlogs
 except ModuleNotFoundError:
     pass
+
+
+if TYPE_CHECKING:
+    from mautrix.types import Event, RoomID, UserID
+
+    from matrixzulipbridge.types import ZulipUserID
 
 
 class MemoryBridgeStateStore(ASStateStore, MemoryStateStore):
@@ -124,12 +130,14 @@ class BridgeAppService(AppService):
     def register_room(self, room: Room):
         self._rooms[room.id] = room
 
-    def unregister_room(self, room_id):
+    def unregister_room(self, room_id: "RoomID"):
         if room_id in self._rooms:
             del self._rooms[room_id]
 
     # this is mostly used by organization rooms at init, it's a bit slow
-    def find_rooms(self, rtype=None, user_id=None, organization_id=None) -> list[Room]:
+    def find_rooms(
+        self, rtype=None, user_id: "UserID" = None, organization_id: "RoomID" = None
+    ) -> list[Room]:
         ret = []
 
         if rtype is not None and not isinstance(rtype, str):
@@ -145,7 +153,7 @@ class BridgeAppService(AppService):
 
         return ret
 
-    def is_admin(self, user_id: str):
+    def is_admin(self, user_id: "UserID"):
         if user_id == self.config["owner"]:
             return True
 
@@ -155,7 +163,7 @@ class BridgeAppService(AppService):
 
         return False
 
-    def is_user(self, user_id: str):
+    def is_user(self, user_id: "UserID"):
         if self.is_admin(user_id):
             return True
 
@@ -165,10 +173,10 @@ class BridgeAppService(AppService):
 
         return False
 
-    def is_local(self, mxid: str):
+    def is_local(self, mxid: "UserID"):
         return mxid.endswith(":" + self.server_name)
 
-    def is_puppet(self, mxid: str) -> bool:
+    def is_puppet(self, mxid: "UserID") -> bool:
         """Checks whether a given MXID is our puppet
 
         Args:
@@ -180,8 +188,12 @@ class BridgeAppService(AppService):
         return mxid.startswith("@" + self.puppet_prefix) and self.is_local(mxid)
 
     def get_mxid_from_zulip_user_id(
-        self, organization, zulip_user_id, at=True, server=True
-    ):
+        self,
+        organization: "OrganizationRoom",
+        zulip_user_id: "ZulipUserID",
+        at=True,
+        server=True,
+    ) -> "UserID":
         ret = re.sub(
             r"[^0-9a-z\-\.=\_/]",
             lambda m: "=" + m.group(0).encode("utf-8").hex(),
@@ -197,7 +209,7 @@ class BridgeAppService(AppService):
 
         return ret
 
-    async def cache_user(self, user_id, displayname):
+    async def cache_user(self, user_id: "UserID", displayname: str):
         # start by caching that the user_id exists without a displayname
         if user_id not in self._users:
             self._users[user_id] = None
@@ -212,7 +224,7 @@ class BridgeAppService(AppService):
                     f"Failed to set displayname '{displayname}' for user_id '{user_id}', got '{e}'"
                 )
 
-    def is_user_cached(self, user_id, displayname=None):
+    def is_user_cached(self, user_id: "UserID", displayname: str = None):
         return user_id in self._users and (
             displayname is None or self._users[user_id] == displayname
         )
@@ -220,9 +232,9 @@ class BridgeAppService(AppService):
     async def ensure_zulip_user_id(
         self,
         organization: "OrganizationRoom",
-        zulip_user_id=None,
+        zulip_user_id: "ZulipUserID" = None,
         update_cache=True,
-        zulip_user=None,
+        zulip_user: dict = None,
     ):
         if zulip_user_id is None:
             zulip_user_id = zulip_user["user_id"]
@@ -240,7 +252,7 @@ class BridgeAppService(AppService):
 
         return mx_user_id
 
-    async def _on_mx_event(self, event):
+    async def _on_mx_event(self, event: "Event"):
         if event.room_id and event.room_id in self._rooms:
             try:
                 room = self._rooms[event.room_id]
@@ -367,7 +379,7 @@ class BridgeAppService(AppService):
             )
             return str(self.api.base_url)
 
-    def mxc_to_url(self, mxc, filename=None):
+    def mxc_to_url(self, mxc: str, filename: str = None):
         mxc = urllib.parse.urlparse(mxc)
 
         if filename is None:
@@ -424,7 +436,7 @@ class BridgeAppService(AppService):
         with open(config_file, encoding="utf-8") as f:
             self.registration = yaml.load(f)
 
-    async def leave_room(self, room_id, members):
+    async def leave_room(self, room_id: "RoomID", members: list["UserID"]):
         members = members if members else []
 
         for member in members:

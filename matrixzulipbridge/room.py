@@ -25,7 +25,7 @@ import logging
 import re
 from abc import ABC
 from collections import defaultdict
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable, Iterable, Optional
 
 from mautrix.appservice import AppService as MauService
 from mautrix.errors.base import IntentError
@@ -35,7 +35,11 @@ from mautrix.types.event.type import EventType
 from matrixzulipbridge.event_queue import EventQueue
 
 if TYPE_CHECKING:
+    from mautrix.types import Event, EventID, RoomID, UserID
+
     from matrixzulipbridge.__main__ import BridgeAppService
+    from matrixzulipbridge.organization_room import OrganizationRoom
+    from matrixzulipbridge.types import ThreadEventID, ZulipTopicName, ZulipUserID
 
 
 class RoomInvalidError(Exception):
@@ -48,15 +52,15 @@ class InvalidConfigError(Exception):
 
 class Room(ABC):
     az: MauService
-    id: str
-    user_id: str
+    id: "RoomID"
+    user_id: "UserID"
     serv: "BridgeAppService"
-    members: list[str]
-    lazy_members: Optional[dict[str, str]]
-    bans: list[str]
-    displaynames: dict[str, str]
-    thread_last_message: dict[str, str]
-    threads: dict[str, str]
+    members: list["UserID"]
+    lazy_members: Optional[dict["UserID", str]]
+    bans: list["UserID"]
+    displaynames: dict["UserID", str]
+    thread_last_message: dict["EventID", "EventID"]
+    threads: dict["ZulipTopicName", "ThreadEventID"]
     send_read_receipt: bool
 
     _mx_handlers: dict[str, list[Callable[[dict], bool]]]
@@ -64,11 +68,11 @@ class Room(ABC):
 
     def __init__(
         self,
-        id: str,
-        user_id: str,
+        id: "RoomID",
+        user_id: "UserID",
         serv: "BridgeAppService",
-        members: list[str],
-        bans: list[str],
+        members: list["UserID"],
+        bans: list["UserID"],
     ):
         self.id = id
         self.user_id = user_id
@@ -132,7 +136,7 @@ class Room(ABC):
 
         self._mx_handlers[type].append(func)
 
-    async def on_mx_event(self, event: dict) -> None:
+    async def on_mx_event(self, event: "Event") -> None:
         handlers = self._mx_handlers.get(str(event.type), [self._on_mx_unhandled_event])
 
         for handler in handlers:
@@ -141,19 +145,19 @@ class Room(ABC):
     def in_room(self, user_id):
         return user_id in self.members
 
-    async def on_mx_ban(self, user_id) -> None:
+    async def on_mx_ban(self, user_id: "UserID") -> None:
         pass
 
-    async def on_mx_unban(self, user_id) -> None:
+    async def on_mx_unban(self, user_id: "UserID") -> None:
         pass
 
-    async def on_mx_leave(self, user_id) -> None:
+    async def on_mx_leave(self, user_id: "UserID") -> None:
         pass
 
-    async def _on_mx_unhandled_event(self, event: dict) -> None:
+    async def _on_mx_unhandled_event(self, event: "Event") -> None:
         pass
 
-    async def _on_mx_room_member(self, event: dict) -> None:
+    async def _on_mx_room_member(self, event: "Event") -> None:
         if (
             event.content.membership in [Membership.LEAVE, Membership.BAN]
             and event.state_key in self.members
@@ -191,21 +195,21 @@ class Room(ABC):
             elif event.state_key in self.displaynames:
                 del self.displaynames[event.state_key]
 
-    async def _join(self, user_id, nick=None):
+    async def _join(self, user_id: "UserID", nick=None):
         await self.az.intent.user(user_id).ensure_joined(self.id, ignore_cache=True)
 
         self.members.append(user_id)
         if nick is not None:
             self.displaynames[user_id] = nick
 
-    async def _flush_events(self, events):
+    async def _flush_events(self, events: Iterable[dict]):
         for event in events:
             try:
                 await self._flush_event(event)
             except Exception:
                 logging.exception("Queued event failed")
 
-    async def _flush_event(self, event):
+    async def _flush_event(self, event: dict):
         if event["type"] == "_join":
             if event["user_id"] not in self.members:
                 await self._join(event["user_id"], event["nick"])
@@ -350,8 +354,8 @@ class Room(ABC):
     def send_message(
         self,
         text: str,
-        user_id: Optional[str] = None,
-        formatted=None,
+        user_id: Optional["UserID"] = None,
+        formatted: str = None,
         fallback_html: Optional[str] = None,
         thread_id: Optional[str] = None,
         custom_data: Optional[dict] = None,
@@ -395,13 +399,13 @@ class Room(ABC):
 
         self._queue.enqueue(event)
 
-    def redact(self, event_id: str, reason: Optional[str] = None) -> None:
+    def redact(self, event_id: "EventID", reason: Optional[str] = None) -> None:
         event = {"type": "_redact", "event_id": event_id, "reason": reason}
 
         self._queue.enqueue(event)
 
     def _ensure_thread_for_topic(
-        self, bridge_data: dict, mx_user_id: Optional[str] = None
+        self, bridge_data: dict, mx_user_id: Optional["UserID"] = None
     ) -> Optional[str]:
         zulip_topic = bridge_data["zulip_topic"]
 
@@ -430,7 +434,7 @@ class Room(ABC):
     def send_emote(
         self,
         text: str,
-        user_id: Optional[str] = None,
+        user_id: Optional["UserID"] = None,
         fallback_html: Optional[str] = None,
     ) -> None:
         event = {
@@ -449,8 +453,8 @@ class Room(ABC):
     def send_notice(
         self,
         text: str,
-        user_id: Optional[str] = None,
-        formatted=None,
+        user_id: Optional["UserID"] = None,
+        formatted: str = None,
         fallback_html: Optional[str] = None,
     ) -> None:
         if formatted:
@@ -479,7 +483,7 @@ class Room(ABC):
         self._queue.enqueue(event)
 
     # send notice to mx user (may be puppeted)
-    def send_notice_html(self, text: str, user_id: Optional[str] = None) -> None:
+    def send_notice_html(self, text: str, user_id: Optional["UserID"] = None) -> None:
         event = {
             "type": "m.room.message",
             "content": {
@@ -493,7 +497,9 @@ class Room(ABC):
 
         self._queue.enqueue(event)
 
-    def react(self, event_id: str, text: str, user_id: Optional[str] = None) -> None:
+    def react(
+        self, event_id: "EventID", text: str, user_id: Optional["UserID"] = None
+    ) -> None:
         event = {
             "type": "m.reaction",
             "content": {
@@ -508,7 +514,7 @@ class Room(ABC):
 
         self._queue.enqueue(event)
 
-    def set_topic(self, topic: str, user_id: Optional[str] = None) -> None:
+    def set_topic(self, topic: str, user_id: Optional["UserID"] = None) -> None:
         event = {
             "type": "m.room.topic",
             "content": {
@@ -520,7 +526,7 @@ class Room(ABC):
 
         self._queue.enqueue(event)
 
-    def join(self, user_id: str, nick=None, lazy=False) -> None:
+    def join(self, user_id: "UserID", nick=None, lazy=False) -> None:
         event = {
             "type": "_join",
             "content": {},
@@ -531,7 +537,7 @@ class Room(ABC):
 
         self._queue.enqueue(event)
 
-    def leave(self, user_id: str, reason: Optional[str] = None) -> None:
+    def leave(self, user_id: "UserID", reason: Optional[str] = None) -> None:
         event = {
             "type": "_leave",
             "content": {},
@@ -551,7 +557,7 @@ class Room(ABC):
 
         self._queue.enqueue(event)
 
-    def kick(self, user_id: str, reason: str) -> None:
+    def kick(self, user_id: "UserID", reason: str) -> None:
         event = {
             "type": "_kick",
             "content": {},
@@ -561,7 +567,12 @@ class Room(ABC):
 
         self._queue.enqueue(event)
 
-    def ensure_zulip_user_id(self, organization, zulip_user_id=None, zulip_user=None):
+    def ensure_zulip_user_id(
+        self,
+        organization: "OrganizationRoom",
+        zulip_user_id: "ZulipUserID" = None,
+        zulip_user=None,
+    ):
         event = {
             "type": "_ensure_zulip_user_id",
             "content": {},
@@ -572,7 +583,7 @@ class Room(ABC):
 
         self._queue.enqueue(event)
 
-    async def sync_permissions(self, permissions):
+    async def sync_permissions(self, permissions: dict):
         room_power_levels = await self.az.intent.get_power_levels(
             self.id, ensure_joined=False
         )

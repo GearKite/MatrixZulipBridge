@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING, Optional
 
 from bidict import bidict
 from mautrix.types import MessageType
-from mautrix.types.event import redaction
 from zulip_emoji_mapping import EmojiNotFoundException, ZulipEmojiMapping
 
 from matrixzulipbridge.command_parse import (
@@ -40,18 +39,26 @@ from matrixzulipbridge.under_organization_room import UnderOrganizationRoom, con
 
 if TYPE_CHECKING:
     import zulip
+    from mautrix.types import (
+        EventID,
+        MessageEvent,
+        ReactionEvent,
+        RedactionEvent,
+        UserID,
+    )
 
     from matrixzulipbridge.organization_room import OrganizationRoom
+    from matrixzulipbridge.types import ZulipMessageID, ZulipUserID
 
 
 class DirectRoom(UnderOrganizationRoom):
     name: str
     media: list[list[str]]
-    recipient_ids: list
+    recipient_ids: list["ZulipUserID"]
     max_backfill_amount: int
     lazy_members: dict
-    messages: bidict
-    reactions: bidict
+    messages: bidict["ZulipMessageID", "EventID"]
+    reactions: bidict["EventID", frozenset]
 
     commands: CommandManager
 
@@ -163,7 +170,7 @@ class DirectRoom(UnderOrganizationRoom):
         asyncio.ensure_future(room.create_mx(mx_recipients))
         return room
 
-    async def create_mx(self, user_mxids) -> None:
+    async def create_mx(self, user_mxids: list["UserID"]) -> None:
         if self.id is None:
             self.id = await self.organization.serv.create_room(
                 f"{self.name} ({self.organization.name})",
@@ -215,7 +222,7 @@ class DirectRoom(UnderOrganizationRoom):
     def send_notice(
         self,
         text: str,
-        user_id: Optional[str] = None,
+        user_id: Optional["UserID"] = None,
         formatted=None,
         fallback_html: Optional[str] = None,
         forward=False,
@@ -237,7 +244,7 @@ class DirectRoom(UnderOrganizationRoom):
             )
 
     def send_notice_html(
-        self, text: str, user_id: Optional[str] = None, forward=False
+        self, text: str, user_id: Optional["UserID"] = None, forward=False
     ) -> None:
         if (
             self.force_forward or forward or self.organization.forward
@@ -247,7 +254,7 @@ class DirectRoom(UnderOrganizationRoom):
             super().send_notice_html(text=text, user_id=user_id)
 
     @connected
-    async def on_mx_message(self, event) -> None:
+    async def on_mx_message(self, event: "MessageEvent") -> None:
         await self.check_if_nobody_left()
 
         sender = str(event.sender)
@@ -274,7 +281,7 @@ class DirectRoom(UnderOrganizationRoom):
         await self.az.intent.send_receipt(event.room_id, event.event_id)
 
     @connected
-    async def on_mx_redaction(self, event: redaction.RedactionEvent):
+    async def on_mx_redaction(self, event: "RedactionEvent"):
         event_id = event.redacts
 
         client = self.organization.zulip_puppets.get(event.sender)
@@ -303,7 +310,7 @@ class DirectRoom(UnderOrganizationRoom):
             logging.debug(f"Couldn't redact event on Zulip: {result['msg']}")
 
     @connected
-    async def on_mx_reaction(self, event):
+    async def on_mx_reaction(self, event: "ReactionEvent"):
         client = self.organization.zulip_puppets.get(event.sender)
         # This only works for logged in users
         if not client:
@@ -346,7 +353,7 @@ class DirectRoom(UnderOrganizationRoom):
             del self.reactions.inverse[frozen_request]
         self.reactions[event.event_id] = frozen_request
 
-    async def _relay_message(self, event):
+    async def _relay_message(self, event: "MessageEvent"):
         prefix = ""
         client = self.organization.zulip_puppets.get(event.sender)
         if not client:
@@ -420,12 +427,12 @@ class DirectRoom(UnderOrganizationRoom):
 
     def relay_zulip_react(
         self,
-        user_id: str,
-        event_id: str,
+        user_id: "UserID",
+        event_id: "EventID",
         key: str,
-        zulip_message_id: str,
+        zulip_message_id: "ZulipMessageID",
         zulip_emoji_name: str,
-        zulip_user_id: str,
+        zulip_user_id: "ZulipUserID",
     ):
         self._queue.enqueue(
             {

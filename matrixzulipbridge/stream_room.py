@@ -26,7 +26,6 @@ import logging
 from typing import TYPE_CHECKING, Optional
 
 from mautrix.types import MessageType
-from mautrix.types.event import redaction
 
 from matrixzulipbridge.command_parse import CommandParser
 from matrixzulipbridge.direct_room import DirectRoom
@@ -34,7 +33,10 @@ from matrixzulipbridge.room import InvalidConfigError
 from matrixzulipbridge.under_organization_room import connected
 
 if TYPE_CHECKING:
+    from mautrix.types import Event, MessageEvent, RoomID, UserID
+
     from matrixzulipbridge.organization_room import OrganizationRoom
+    from matrixzulipbridge.types import ZulipStreamID, ZulipUserID
 
 
 class StreamRoom(DirectRoom):
@@ -49,7 +51,7 @@ class StreamRoom(DirectRoom):
     force_forward = True
     topic_sync = None
 
-    stream_id: Optional[int]
+    stream_id: "ZulipStreamID"
     stream_name: Optional[str]
 
     def init(self) -> None:
@@ -159,7 +161,7 @@ class StreamRoom(DirectRoom):
         organization: "OrganizationRoom",
         name: str,
         backfill: int = None,
-        room_id: str = None,
+        room_id: "RoomID" = None,
     ) -> "StreamRoom":
         logging.debug(
             f"StreamRoom.create(organization='{organization.name}', name='{name}'"
@@ -246,7 +248,7 @@ class StreamRoom(DirectRoom):
             "topic_sync": self.topic_sync,
         }
 
-    async def create_mx(self, name):
+    async def create_mx(self, name: str):
         # handle !room names properly
         visible_name = name
         if visible_name.startswith("!"):
@@ -284,13 +286,13 @@ class StreamRoom(DirectRoom):
             await self.organization.space.attach(self.id)
 
     @connected
-    async def _on_mx_room_topic(self, event) -> None:
+    async def _on_mx_room_topic(self, event: "Event") -> None:
         if event.sender != self.serv.user_id and self.topic_sync in ["zulip", "any"]:
             # topic = re.sub(r"[\r\n]", " ", event.content.topic)
             raise NotImplementedError("Changing Zulip stream description")
 
     @connected
-    async def on_mx_message(self, event) -> None:
+    async def on_mx_message(self, event: "MessageEvent") -> None:
         sender = str(event.sender)
         (name, server) = sender.split(":", 1)
 
@@ -321,7 +323,7 @@ class StreamRoom(DirectRoom):
 
         await self.az.intent.send_receipt(event.room_id, event.event_id)
 
-    async def _relay_message(self, event, sender):
+    async def _relay_message(self, event: "MessageEvent", sender: str):
         prefix = ""
         client = self.organization.zulip_puppets.get(event.sender)
         if not client:
@@ -387,15 +389,15 @@ class StreamRoom(DirectRoom):
         await self.save()
 
     @connected
-    async def on_mx_ban(self, user_id) -> None:
+    async def on_mx_ban(self, user_id: "UserID") -> None:
         pass
 
     @connected
-    async def on_mx_unban(self, user_id) -> None:
+    async def on_mx_unban(self, user_id: "UserID") -> None:
         pass
 
     @connected
-    async def on_mx_leave(self, user_id) -> None:
+    async def on_mx_leave(self, user_id: "UserID") -> None:
         pass
 
     async def cmd_displaynames(self, args) -> None:
@@ -447,7 +449,7 @@ class StreamRoom(DirectRoom):
             f"Member sync is set to {self.member_sync}", forward=args._forward
         )
 
-    def _add_puppet(self, zulip_user):
+    def _add_puppet(self, zulip_user: dict):
         mx_user_id = self.serv.get_mxid_from_zulip_user_id(
             self.organization, zulip_user["user_id"]
         )
@@ -461,7 +463,9 @@ class StreamRoom(DirectRoom):
 
         self.leave(user_id, reason)
 
-    def on_join(self, zulip_user_id: int = None, zulip_user: dict = None) -> None:
+    def on_join(
+        self, zulip_user_id: "ZulipUserID" = None, zulip_user: dict = None
+    ) -> None:
         if zulip_user_id is None:
             zulip_user_id = zulip_user["user_id"]
         # we don't need to sync ourself
@@ -477,7 +481,7 @@ class StreamRoom(DirectRoom):
         )
         self.join(mx_user_id, zulip_user["full_name"], lazy=False)
 
-    def on_part(self, zulip_user_id) -> None:
+    def on_part(self, zulip_user_id: "ZulipUserID") -> None:
         # we don't need to sync ourself
         if zulip_user_id == self.organization.profile["user_id"]:
             return
@@ -487,7 +491,7 @@ class StreamRoom(DirectRoom):
         )
         self._remove_puppet(mx_user_id)
 
-    async def sync_zulip_members(self, subscribers: list):
+    async def sync_zulip_members(self, subscribers: list["ZulipUserID"]):
         to_remove = []
         to_add = []
 

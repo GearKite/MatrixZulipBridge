@@ -32,6 +32,8 @@ from mautrix.types.event.type import EventType
 from matrixzulipbridge.under_organization_room import UnderOrganizationRoom
 
 if TYPE_CHECKING:
+    from mautrix.types import RoomID
+
     from matrixzulipbridge.organization_room import OrganizationRoom
 
 
@@ -60,7 +62,7 @@ class SpaceRoom(UnderOrganizationRoom):
 
     @staticmethod
     async def create(
-        organization: "OrganizationRoom", initial_rooms: list[str]
+        organization: "OrganizationRoom", initial_rooms: list["RoomID"]
     ) -> "SpaceRoom":
         logging.debug(
             f"SpaceRoom.create(organization='{organization.id}' ({organization.name}))"
@@ -149,7 +151,7 @@ class SpaceRoom(UnderOrganizationRoom):
 
         super().cleanup()
 
-    async def attach(self, room_id) -> None:
+    async def attach(self, room_id: "RoomID") -> None:
         # if we are attached between space request and creation just add to pending list
         if self.id is None:
             logging.debug(f"Queuing room {room_id} attachment to pending space.")
@@ -164,7 +166,7 @@ class SpaceRoom(UnderOrganizationRoom):
             content=SpaceChildStateEventContent(via=[self.serv.server_name]),
         )
 
-    async def detach(self, room_id) -> None:
+    async def detach(self, room_id: "RoomID") -> None:
         if self.id is not None:
             logging.debug(f"Detaching room {room_id} from space {self.id}.")
             await self.az.intent.send_state_event(

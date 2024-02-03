@@ -24,6 +24,7 @@
 import re
 from argparse import Namespace
 from html import escape
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from mautrix.errors import MatrixRequestError
@@ -37,6 +38,9 @@ from matrixzulipbridge.command_parse import (
 from matrixzulipbridge.organization_room import OrganizationRoom
 from matrixzulipbridge.personal_room import PersonalRoom
 from matrixzulipbridge.room import Room
+
+if TYPE_CHECKING:
+    from mautrix.types import MessageEvent
 
 
 class ControlRoom(Room):
@@ -189,7 +193,7 @@ class ControlRoom(Room):
         except CommandParserError as e:
             return self.send_notice(str(e))
 
-    async def on_mx_message(self, event) -> bool:
+    async def on_mx_message(self, event: "MessageEvent") -> bool:
         if str(event.content.msgtype) != "m.text" or event.sender == self.serv.user_id:
             return
 
