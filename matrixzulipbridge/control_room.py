@@ -280,8 +280,9 @@ class ControlRoom(Room):
 
         return self.send_notice("Organization removed.")
 
-    async def cmd_status(self, args):
+    async def cmd_status(self, _args):
         users = set()
+        response = ""
 
         if self.serv.is_admin(self.user_id):
             for room in self.serv.find_rooms():
@@ -294,66 +295,35 @@ class ControlRoom(Room):
         else:
             users.add(self.user_id)
 
-        self.send_notice_html(f"I have {len(users)} known users:")
+        response += f"I have {len(users)} known users:"
         for user_id in users:
             ncontrol = len(self.serv.find_rooms("ControlRoom", user_id))
 
-            self.send_notice_html(
-                f"{indent(1)}{user_id} ({ncontrol} open control rooms):"
-            )
+            response += f"<br>{indent(1)}{user_id} ({ncontrol} open control rooms):"
 
             for organization in self.serv.find_rooms("OrganizationRoom", user_id):
                 connected = "not connected"
-                channels = "not in channels"
-                privates = "not in PMs"
-                plumbs = "not in plumbs"
+                stream = "no streams"
+                direct = "no DMs"
 
                 if organization.zulip and organization.zulip.has_connected:
-                    user = (
-                        organization.real_user
-                        if organization.real_user[0] != "?"
-                        else "?"
-                    )
-                    host = (
-                        organization.real_host
-                        if organization.real_host[0] != "?"
-                        else "?"
-                    )
-                    connected = f"connected as {organization.profile['full_name']}!{user}@{host}"
+                    connected = f"connected to {organization.site}"
 
-                nchannels = 0
-                nprivates = 0
-                nplumbs = 0
+                nstream = 0
+                ndirect = len(organization.direct_rooms)
 
                 for room in organization.rooms.values():
-                    if type(room).__name__ == "DirectRoom":
-                        nprivates += 1
                     if type(room).__name__ == "StreamRoom":
-                        nchannels += 1
+                        nstream += 1
 
-                if nprivates > 0:
-                    privates = f"in {nprivates} PMs"
+                if nstream > 0:
+                    stream = f"{nstream} streams"
 
-                if nchannels > 0:
-                    channels = f"in {nchannels} channels"
+                if ndirect > 0:
+                    direct = f"{ndirect} DMs"
 
-                if nplumbs > 0:
-                    plumbs = f"in {nplumbs} plumbs"
-
-                self.send_notice_html(
-                    f"{indent(2)}{organization.name}, {connected}, {channels}, {privates}, {plumbs}"
-                )
-
-                if self.user_id == user_id:
-                    for room in organization.rooms.values():
-                        join = ""
-                        if not room.in_room(user_id):
-                            join = " (you have not joined this room)"
-                            # ensure the user invite is valid
-                            await self.az.intent.invite_user(room.id, self.user_id)
-                        self.send_notice_html(
-                            f'{indent(3)}<a href="https://matrix.to/#/{escape(room.id)}">{escape(room.name)}</a>{join}'
-                        )
+                response += f"<br>{indent(2)}{organization.name}, {connected}, {stream}, {direct}"
+        self.send_notice_html(response)
 
     async def cmd_forget(self, args):
         if args.user == self.user_id:
@@ -561,3 +531,7 @@ class ControlRoom(Room):
             return
         await PersonalRoom.create(organization, self.user_id)
         self.send_notice("Personal room created")
+
+
+def indent(n):
+    return "&nbsp;" * n * 8
