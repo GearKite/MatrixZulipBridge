@@ -51,7 +51,7 @@ class DirectRoom(UnderOrganizationRoom):
     max_backfill_amount: int
     lazy_members: dict
     messages: bidict
-    reactions: dict
+    reactions: bidict
 
     commands: CommandManager
 
@@ -63,7 +63,7 @@ class DirectRoom(UnderOrganizationRoom):
         self.recipient_ids = []
         self.max_backfill_amount = None
         self.messages = bidict()
-        self.reactions = {}
+        self.reactions = bidict()
 
         self.commands = CommandManager()
 
@@ -99,7 +99,12 @@ class DirectRoom(UnderOrganizationRoom):
             self.messages = bidict(config["messages"])
 
         if "reactions" in config and config["reactions"]:
-            self.reactions = bidict(config["reactions"])
+            self.reactions = bidict(
+                {
+                    k: frozenset({l[0]: l[1] for l in v}.items())
+                    for k, v in config["reactions"].items()
+                }
+            )
 
     def to_config(self) -> dict:
         return {
@@ -110,7 +115,7 @@ class DirectRoom(UnderOrganizationRoom):
             "max_backfill_amount": self.max_backfill_amount,
             "recipient_ids": self.recipient_ids,
             "messages": dict(self.messages),
-            "reactions": self.reactions,
+            "reactions": {k: list(v) for k, v in self.reactions.items()},
         }
 
     @staticmethod
@@ -277,8 +282,20 @@ class DirectRoom(UnderOrganizationRoom):
         if event_id in self.messages.inverse:
             zulip_message_id = self.messages.inverse[event_id]
             result = client.delete_message(zulip_message_id)
+            del self.messages.inverse[event_id]
         elif event_id in self.reactions:
-            result = client.remove_reaction(self.reactions[event_id])
+            reaction = {i[0]: i[1] for i in self.reactions[event_id]}
+            request = {
+                "message_id": reaction["message_id"],
+                "emoji_name": reaction["emoji_name"],
+            }
+            result = client.remove_reaction(request)
+            zulip_user_id = self.organization.zulip_puppet_user_mxid.inverse[
+                event.sender
+            ]
+            request["user_id"] = str(zulip_user_id)
+            frozen_request = frozenset(request.items())
+            del self.reactions.inverse[frozen_request]
         else:
             return
 
@@ -293,6 +310,8 @@ class DirectRoom(UnderOrganizationRoom):
             return
         if event.content.relates_to.rel_type.value != "m.annotation":
             return
+
+        zulip_user_id = self.organization.zulip_puppet_user_mxid.inverse[event.sender]
 
         reaction = event.content.relates_to.key
 
@@ -320,7 +339,12 @@ class DirectRoom(UnderOrganizationRoom):
             logging.debug(f"Failed adding reaction {emoji_name} to {zulip_message_id}!")
             return
 
-        self.reactions[event.event_id] = request
+        request["user_id"] = str(zulip_user_id)
+        frozen_request = frozenset(request.items())
+
+        if frozen_request in self.reactions.inverse:
+            del self.reactions.inverse[frozen_request]
+        self.reactions[event.event_id] = frozen_request
 
     async def _relay_message(self, event):
         prefix = ""
@@ -370,6 +394,50 @@ class DirectRoom(UnderOrganizationRoom):
         self.messages[str(result["id"])] = event.event_id
         await self.organization.save()
         await self.save()
+
+    async def _flush_event(self, event: dict):
+        if event["type"] == "_zulip_react":
+            intent = self.az.intent.user(event["user_id"])
+            message_event_id = event["event_id"]
+
+            request = {
+                "message_id": event["zulip_message_id"],
+                "emoji_name": event["zulip_emoji_name"],
+                "user_id": event["zulip_user_id"],
+            }
+            frozen_request = frozenset(request.items())
+
+            # Check if this reaction has already been relayed
+            if self.reactions.inverse.get(frozen_request) is not None:
+                return
+
+            event_id = await intent.react(self.id, message_event_id, event["key"])
+
+            self.reactions[event_id] = frozen_request
+            await self.save()
+        else:
+            await super()._flush_event(event)
+
+    def relay_zulip_react(
+        self,
+        user_id: str,
+        event_id: str,
+        key: str,
+        zulip_message_id: str,
+        zulip_emoji_name: str,
+        zulip_user_id: str,
+    ):
+        self._queue.enqueue(
+            {
+                "type": "_zulip_react",
+                "user_id": user_id,
+                "event_id": event_id,
+                "key": key,
+                "zulip_message_id": zulip_message_id,
+                "zulip_emoji_name": zulip_emoji_name,
+                "zulip_user_id": zulip_user_id,
+            }
+        )
 
     async def check_if_nobody_left(self):
         """Invite back everyone who left"""

@@ -28,6 +28,7 @@ from urllib.parse import urljoin
 import emoji
 from bs4 import BeautifulSoup
 from markdownify import markdownify
+from zulip_emoji_mapping import EmojiNotFoundException, ZulipEmojiMapping
 
 from matrixzulipbridge.direct_room import DirectRoom
 from matrixzulipbridge.stream_room import StreamRoom
@@ -144,8 +145,50 @@ class ZulipEventHandler:
             custom_data=custom_data,
         )
 
-    def _handle_reaction(self, _event: dict):
-        ...  # TODO: Implement
+    def _handle_reaction(self, event: dict):
+        zulip_message_id = str(event["message_id"])
+        room = self._get_room_by_message_id(zulip_message_id)
+
+        if not room:
+            logging.debug(f"Couldn't find room for reaction: {event}")
+            return
+
+        mx_user_id = room.serv.get_mxid_from_zulip_user_id(
+            self.organization, event["user_id"]
+        )
+
+        try:
+            reaction = ZulipEmojiMapping.get_emoji_by_name(event["emoji_name"])
+        except EmojiNotFoundException:
+            reaction = event["emoji_name"]
+
+        print(event)
+
+        if event["op"] == "add":
+            message_event_id = room.messages[zulip_message_id]
+            room.relay_zulip_react(
+                user_id=mx_user_id,
+                event_id=message_event_id,
+                key=reaction,
+                zulip_message_id=zulip_message_id,
+                zulip_emoji_name=event["emoji_name"],
+                zulip_user_id=str(event["user_id"]),
+            )
+        elif event["op"] == "remove":
+            request = {
+                "message_id": zulip_message_id,
+                "emoji_name": event["emoji_name"],
+                "user_id": str(event["user_id"]),
+            }
+            frozen_request = frozenset(request.items())
+
+            event_id = room.reactions.inverse.get(frozen_request)
+
+            if event_id is None:
+                return
+
+            room.redact(event_id, "removed on Zulip")
+            del room.reactions[event_id]
 
     def _handle_delete_message(self, event: dict):
         room = self._get_room_by_stream_id(event["stream_id"])
@@ -205,6 +248,14 @@ class ZulipEventHandler:
             if not isinstance(room, StreamRoom):
                 continue
             if room.stream_id == stream_id:
+                return room
+        return None
+
+    def _get_room_by_message_id(self, message_id) -> Optional["DirectRoom"]:
+        for room in self.organization.rooms.values():
+            if not isinstance(room, DirectRoom):
+                continue
+            if message_id in room.messages:
                 return room
         return None
 
