@@ -753,8 +753,8 @@ class OrganizationRoom(Room):
     async def _on_connect(self):
         await self._get_users()
         await self._login_zulip_puppets()
-        await self._sync_permissions()
         await self._sync_all_room_members()
+        await self._sync_permissions()
         await self.backfill_messages()
 
     async def _get_users(self):
@@ -813,7 +813,19 @@ class OrganizationRoom(Room):
         # Owner should have the highest permissions (after bot)
         self.permissions[self.serv.config["owner"]] = 99
 
-        # TODO: Get permissions from zulip
+        # arbitrary translations of Zulip roles to Matrix permissions
+        role_permission_mapping = {
+            100: 95,  # owner
+            200: 80,  # administrator
+            300: 50,  # moderator
+            400: 0,  # member
+            600: 0,  # guest
+        }
+
+        for zulip_user_id, user in self.zulip_users.items():
+            user_id = self.serv.get_mxid_from_zulip_user_id(self, zulip_user_id)
+            power_level = role_permission_mapping[user["role"]]
+            self.permissions[user_id] = power_level
 
         rooms = set(self.rooms.values())
         rooms.add(self)
@@ -821,7 +833,7 @@ class OrganizationRoom(Room):
         logging.info(len(rooms))
 
         for room in rooms:
-            if room is None:
+            if not isinstance(room, (StreamRoom, OrganizationRoom, SpaceRoom)):
                 continue
             logging.debug(f"Synching permissions in {self.name} - {room.id}")
             await room.sync_permissions(self.permissions)
