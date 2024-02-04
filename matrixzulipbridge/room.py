@@ -27,6 +27,7 @@ from abc import ABC
 from collections import defaultdict
 from typing import TYPE_CHECKING, Callable, Iterable, Optional
 
+from bidict import bidict
 from mautrix.appservice import AppService as MauService
 from mautrix.errors.base import IntentError
 from mautrix.types import Membership
@@ -60,7 +61,7 @@ class Room(ABC):
     bans: list["UserID"]
     displaynames: dict["UserID", str]
     thread_last_message: dict["EventID", "EventID"]
-    threads: dict["ZulipTopicName", "ThreadEventID"]
+    threads: bidict["ZulipTopicName", "ThreadEventID"]
     send_read_receipt: bool
 
     _mx_handlers: dict[str, list[Callable[[dict], bool]]]
@@ -83,7 +84,7 @@ class Room(ABC):
         self.displaynames = {}
         self.last_messages = defaultdict(str)
         self.thread_last_message = {}
-        self.threads = {}
+        self.threads = bidict()
         self.send_read_receipt = True
 
         self._mx_handlers = {}
@@ -107,7 +108,7 @@ class Room(ABC):
 
     def from_config(self, config: dict) -> None:
         if "threads" in config:
-            self.threads = config["threads"]
+            self.threads = bidict(config["threads"])
 
         if "send_read_receipt" in config:
             self.send_read_receipt = config["send_read_receipt"]
@@ -122,7 +123,10 @@ class Room(ABC):
         self._queue.stop()
 
     def to_config(self) -> dict:
-        return {"threads": self.threads, "send_read_receipt": self.send_read_receipt}
+        return {
+            "threads": dict(self.threads),
+            "send_read_receipt": self.send_read_receipt,
+        }
 
     async def save(self) -> None:
         config = self.to_config()

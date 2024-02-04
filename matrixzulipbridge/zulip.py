@@ -56,6 +56,8 @@ class ZulipEventHandler:
                 self._handle_delete_message(event)
             case "realm_user":
                 self._handle_realm_user(event)
+            case "update_message":
+                self._handle_update_message(event)
             case _:
                 logging.debug(f"Unhandled event type: {event['type']}")
 
@@ -227,6 +229,15 @@ class ZulipEventHandler:
             if not user_id in self.organization.zulip_users:
                 return
             self.organization.zulip_users[user_id] |= event["person"]
+
+    def _handle_update_message(self, event: dict):
+        room = self._get_room_by_stream_id(event["stream_id"])
+        if event["propagate_mode"] == "change_all":
+            thread_event_id = room.threads.get(event["orig_subject"])
+            if thread_event_id is None:
+                return
+            del room.threads[event["orig_subject"]]
+            room.threads[event["subject"]] = thread_event_id
 
     def _get_mxid_from_zulip_id(
         self, zulip_id: "ZulipMessageID", room: DirectRoom = None

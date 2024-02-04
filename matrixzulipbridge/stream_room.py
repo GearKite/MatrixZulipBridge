@@ -358,11 +358,14 @@ class StreamRoom(DirectRoom):
         topic = thread_event.content.body
 
         # Save last thread event for old clients
-        self.thread_last_message[thread_event.event_id] = event.event_id
+        self.thread_last_message[thread_id] = event.event_id
 
-        # Save thread id for topic
-        if topic not in self.threads:
-            self.threads[topic] = thread_event.event_id
+        if thread_id in self.threads.inv:
+            topic = self.threads.inv[thread_id]
+        else:
+            thread_event = await self.az.intent.get_event(self.id, thread_id)
+            topic = thread_event.content.body
+            self.threads[topic] = thread_id
 
         if event.content.get_edit():
             message = await self._process_event_content(event, prefix, reply_to)
