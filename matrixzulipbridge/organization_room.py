@@ -467,6 +467,7 @@ class OrganizationRoom(Room):
 
         if room is None:
             self.send_notice("No room with that name exists.")
+            return
 
         self.serv.unregister_room(room.id)
         room.cleanup()
