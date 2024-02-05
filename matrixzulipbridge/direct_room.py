@@ -79,6 +79,7 @@ class DirectRoom(UnderOrganizationRoom):
             description="set the maximum amount of backfilled messages (0 to disable backfilling)",
         )
         cmd.add_argument("amount", nargs="?", help="new amount")
+        cmd.add_argument("--now", action="store_true", help="start backfilling now")
         self.commands.register(cmd, self.cmd_backfill)
 
         self.mx_register("m.room.message", self.on_mx_message)
@@ -460,6 +461,8 @@ class DirectRoom(UnderOrganizationRoom):
         self.send_notice(
             f"Maximum backfill amount is set to: {self.max_backfill_amount}"
         )
+        if args.now:
+            await self.backfill_messages()
 
     async def cmd_upgrade(self, args) -> None:
         if not args.undo:

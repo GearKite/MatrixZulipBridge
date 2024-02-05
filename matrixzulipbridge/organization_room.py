@@ -254,6 +254,7 @@ class OrganizationRoom(Room):
         cmd.add_argument(
             "--update", action="store_true", help="also set this to all existing rooms"
         )
+        cmd.add_argument("--now", action="store_true", help="start backfilling now")
         self.commands.register(cmd, self.cmd_backfill)
 
         cmd = CommandParser(
@@ -605,6 +606,8 @@ class OrganizationRoom(Room):
             self.send_notice(
                 f"Maximum backfill amount is set to: {self.max_backfill_amount}"
             )
+        if args.now:
+            await self.backfill_messages()
 
     async def cmd_personalroom(self, _args) -> None:
         await PersonalRoom.create(self, self.user_id)
