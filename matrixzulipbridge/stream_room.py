@@ -49,7 +49,6 @@ class StreamRoom(DirectRoom):
 
     use_displaynames = True
     allow_notice = False
-    force_forward = True
     topic_sync = None
 
     stream_id: "ZulipStreamID"

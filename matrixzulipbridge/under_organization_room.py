@@ -67,7 +67,7 @@ class UnderOrganizationRoom(Room):
     def init(self) -> None:
         self.organization = None
         self.organization_id = None
-        self.force_forward = False
+        self.force_forward = True
 
     def from_config(self, config: dict) -> None:
         super().from_config(config)

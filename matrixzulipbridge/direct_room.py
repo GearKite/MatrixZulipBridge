@@ -226,9 +226,7 @@ class DirectRoom(UnderOrganizationRoom):
         fallback_html: Optional[str] = None,
         forward=False,
     ):
-        if (
-            self.force_forward or forward or self.organization.forward
-        ) and user_id is None:
+        if (self.force_forward or forward) and user_id is None:
             self.organization.send_notice(
                 text=f"{self.name}: {text}",
                 formatted=formatted,
@@ -245,9 +243,7 @@ class DirectRoom(UnderOrganizationRoom):
     def send_notice_html(
         self, text: str, user_id: Optional["UserID"] = None, forward=False
     ) -> None:
-        if (
-            self.force_forward or forward or self.organization.forward
-        ) and user_id is None:
+        if (self.force_forward or forward) and user_id is None:
             self.organization.send_notice_html(text=f"{self.name}: {text}")
         else:
             super().send_notice_html(text=text, user_id=user_id)
