@@ -287,8 +287,8 @@ class Room(ABC):
                 bridge_data.get("type") == "message"
                 and bridge_data.get("target") == "stream"
             ):
-                thread_id = self.threads[bridge_data["zulip_topic"]]
-                if not thread_id:
+                thread_id = self.threads.get(bridge_data["zulip_topic"])
+                if thread_id is None:
                     logging.error(
                         f"Thread not created for topic: {bridge_data['zulip_topic']}"
                     )
@@ -323,6 +323,14 @@ class Room(ABC):
                 timestamp = bridge_data["timestamp"] * 1000
 
             event_type = EventType.find(event["type"])
+
+            # Skip creating a new thread if it already exists
+            if (
+                bridge_data.get("type") == "topic"
+                and bridge_data["zulip_topic"] in self.threads
+            ):
+                return
+
             event_id = await intent.send_message_event(
                 self.id,
                 event_type,
@@ -421,8 +429,6 @@ class Room(ABC):
 
         bridge_data["type"] = "topic"
 
-        ## Create a new thread
-        logging.debug(f"Creating new thread for topic: {zulip_topic}")
         # Send topic name as a message
         event = {
             "type": "m.room.message",
@@ -434,7 +440,6 @@ class Room(ABC):
             "user_id": mx_user_id,
         }
         self._queue.enqueue(event)
-        self.threads[zulip_topic] = None
         return None
 
     # send emote to mx user (may be puppeted)
