@@ -45,21 +45,25 @@ class ZulipEventHandler:
         self.messages = set()
 
     def on_event(self, event: dict):
-        match event["type"]:
-            case "message":
-                self._handle_message(event["message"])
-            case "subscription":
-                self._handle_subscription(event)
-            case "reaction":
-                self._handle_reaction(event)
-            case "delete_message":
-                self._handle_delete_message(event)
-            case "realm_user":
-                self._handle_realm_user(event)
-            case "update_message":
-                self._handle_update_message(event)
-            case _:
-                logging.debug(f"Unhandled event type: {event['type']}")
+        logging.debug(f"Zulip event for {self.organization.name}: {event}")
+        try:
+            match event["type"]:
+                case "message":
+                    self._handle_message(event["message"])
+                case "subscription":
+                    self._handle_subscription(event)
+                case "reaction":
+                    self._handle_reaction(event)
+                case "delete_message":
+                    self._handle_delete_message(event)
+                case "realm_user":
+                    self._handle_realm_user(event)
+                case "update_message":
+                    self._handle_update_message(event)
+                case _:
+                    logging.debug(f"Unhandled event type: {event['type']}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.exception(e)
 
     def backfill_message(self, message: dict):
         self._handle_message(message)
@@ -231,13 +235,18 @@ class ZulipEventHandler:
             self.organization.zulip_users[user_id] |= event["person"]
 
     def _handle_update_message(self, event: dict):
-        room = self._get_room_by_stream_id(event["stream_id"])
-        if event["propagate_mode"] == "change_all":
-            thread_event_id = room.threads.get(event["orig_subject"])
-            if thread_event_id is None:
+        if "orig_subject" in event:
+            # Message topic renamed
+            stream_id = event.get("stream_id")
+            if stream_id is None:
                 return
-            del room.threads[event["orig_subject"]]
-            room.threads[event["subject"]] = thread_event_id
+            room = self._get_room_by_stream_id(stream_id)
+            if event["propagate_mode"] == "change_all":
+                thread_event_id = room.threads.get(event["orig_subject"])
+                if thread_event_id is None:
+                    return
+                del room.threads[event["orig_subject"]]
+                room.threads[event["subject"]] = thread_event_id
 
     def _get_mxid_from_zulip_id(
         self, zulip_id: "ZulipMessageID", room: DirectRoom = None
