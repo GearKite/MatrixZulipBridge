@@ -24,6 +24,7 @@
 import asyncio
 import logging
 from typing import TYPE_CHECKING, Optional
+from urllib.parse import quote, urlparse
 
 from bs4 import BeautifulSoup
 from markdownify import markdownify
@@ -39,7 +40,7 @@ from mautrix.types.event.type import EventType
 from matrixzulipbridge.room import InvalidConfigError, Room
 
 if TYPE_CHECKING:
-    from mautrix.types import MessageEvent, RoomID
+    from mautrix.types import MessageEvent, RoomID, UserID
 
     from matrixzulipbridge.organization_room import OrganizationRoom
 
@@ -106,7 +107,11 @@ class UnderOrganizationRoom(Room):
             await self.organization.space.attach(self.id)
 
     async def _process_event_content(
-        self, event: "MessageEvent", prefix: str = "", _reply_to=None
+        self,
+        event: "MessageEvent",
+        prefix: str = "",
+        reply_to=None,
+        topic: str = None,
     ):
         content = event.content
 
@@ -118,36 +123,55 @@ class UnderOrganizationRoom(Room):
         elif content.formatted_body:
             message = content.formatted_body
 
-            if "m.mentions" in content:
-                mentioned_users: list[str] = event.content["m.mentions"].get(
-                    "user_ids", []
-                )
-                soup = BeautifulSoup(content.formatted_body, features="html.parser")
-                for mxid in mentioned_users:
-                    # Translate puppet mentions as native Zulip mentions
-                    if not self.serv.is_puppet(mxid):
-                        continue
+            # Replace all puppet mentions with Zulip mentions
+            soup = BeautifulSoup(content.formatted_body, features="html.parser")
+            for link in soup.find_all("a"):
+                href: str = link.get("href", "")
+                if not href.startswith("https://matrix.to/#/"):
+                    continue
+                mxid = href.split("https://matrix.to/#/")[1]
+                # Translate puppet mentions as native Zulip mentions
+                if not self.serv.is_puppet(mxid):
+                    continue
 
-                    user_id = self.organization.get_zulip_user_id_from_mxid(mxid)
-                    zulip_user = self.organization.get_zulip_user(user_id)
+                user_id = self.organization.get_zulip_user_id_from_mxid(mxid)
+                zulip_user = self.organization.get_zulip_user(user_id)
 
-                    # Replace matrix.to links with Zulip mentions
-                    mentions = soup.find_all(
-                        "a",
-                        href=f"https://matrix.to/#/{mxid}",
-                    )
+                zulip_mention = soup.new_tag("span")
+                zulip_mention.string = " @"
+                zulip_mention_content = soup.new_tag("strong")
+                zulip_mention_content.string = f"{zulip_user['full_name']}|{user_id}"
+                zulip_mention.append(zulip_mention_content)
 
-                    zulip_mention = soup.new_tag("span")
-                    zulip_mention.string = " @"
-                    zulip_mention_content = soup.new_tag("strong")
-                    zulip_mention_content.string = (
-                        f"{zulip_user['full_name']}|{user_id}"
-                    )
-                    zulip_mention.append(zulip_mention_content)
+                link.replace_with(zulip_mention)
 
-                    for mention in mentions:
-                        mention.replace_with(zulip_mention)
-                message = soup.encode(formatter="html5")
+            if reply_to is not None:
+                reply_block = soup.find("mx-reply")
+                if reply_block is not None:
+                    links = reply_block.find_all("a")
+                    if type(self).__name__ in (
+                        "DirectRoom",
+                        "StreamRoom",
+                    ):
+                        # Replace reply event link with Zulip link
+                        in_reply_to_link = links[0]
+                        narrow = self._construct_zulip_narrow_url(
+                            topic=topic,
+                            message_id=self.messages.inv.get(reply_to.event_id),
+                        )
+                        in_reply_to_link["href"] = narrow
+
+                    # Replace mxid with display name (non-puppet users)
+                    if len(links) > 1:
+                        author_link = links[1]
+                        author_mxid = author_link["href"].split("https://matrix.to/#/")[
+                            1
+                        ]
+                        author_link.string.replace_with(
+                            self._get_displayname(author_mxid)
+                        )
+
+            message = soup.encode(formatter="html5")
 
             message = markdownify(message)
         elif content.body:
@@ -157,6 +181,31 @@ class UnderOrganizationRoom(Room):
             return
         message = prefix + message
         return message
+
+    def _get_displayname(self, mxid: "UserID"):
+        if mxid in self.displaynames:
+            sender_displayname = self.displaynames[mxid][:100]
+            return sender_displayname
+        # Fallback to mxid
+        return mxid
+
+    def _construct_zulip_narrow_url(self, topic=None, message_id=None):
+        zulip_uri = urlparse(self.organization.zulip.base_url)
+        base_url = zulip_uri.scheme + "://" + zulip_uri.netloc
+
+        narrow = base_url + "/#narrow"
+
+        if type(self).__name__ == "DirectRoom":
+            narrow += f"/dm/{','.join(self.recipient_ids)}"
+        elif type(self).__name__ == "StreamRoom":
+            narrow += f"/stream/{self.stream_id}"
+
+        if topic is not None:
+            narrow += f"/topic/{quote(topic, safe='')}"
+        if message_id is not None:
+            narrow += f"/near/{message_id}"
+
+        return narrow
 
     async def _attach_space_internal(self) -> None:
         await self.az.intent.send_state_event(

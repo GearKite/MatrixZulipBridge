@@ -375,13 +375,9 @@ class DirectRoom(UnderOrganizationRoom):
                     self.id, rel_event.content.get_reply_to()
                 )
 
-        if event.content.get_edit():
-            message = await self._process_event_content(event, prefix, reply_to)
-            self.last_messages[event.sender] = event
-        else:
-            # keep track of the last message
-            self.last_messages[event.sender] = event
-            message = await self._process_event_content(event, prefix)
+        # keep track of the last message
+        self.last_messages[event.sender] = event
+        message = await self._process_event_content(event, prefix, reply_to)
 
         request = {
             "type": "private",

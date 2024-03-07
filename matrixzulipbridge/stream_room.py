@@ -307,12 +307,7 @@ class StreamRoom(DirectRoom):
         ):
             return
 
-        if self.use_displaynames and event.sender in self.displaynames:
-            sender_displayname = self.displaynames[event.sender][:100]
-
-            sender_displayname = f"[{sender_displayname}](https://matrix.to/#/{sender})"
-
-            sender = sender_displayname
+        sender = f"[{self._get_displayname(sender)}](https://matrix.to/#/{sender})"
 
         if event.content.msgtype.is_media or event.content.msgtype in (
             MessageType.EMOTE,
@@ -366,13 +361,11 @@ class StreamRoom(DirectRoom):
             topic = thread_event.content.body
             self.threads[topic] = thread_id
 
-        if event.content.get_edit():
-            message = await self._process_event_content(event, prefix, reply_to)
-            self.last_messages[event.sender] = event
-        else:
-            # keep track of the last message
-            self.last_messages[event.sender] = event
-            message = await self._process_event_content(event, prefix)
+        # keep track of the last message
+        self.last_messages[event.sender] = event
+        message = await self._process_event_content(
+            event, prefix, reply_to, topic=topic
+        )
 
         request = {
             "type": "stream",
