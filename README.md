@@ -20,7 +20,7 @@ Join the Matrix room [#MatrixZulipBridge:shema.lv](https://matrix.to/#/#matrixzu
 - [ ] Presence
 - [x] Reactions
 - [x] Redactions\* (only from Matrix in DMs)
-- [x] Replies\* (badly formatted)
+- [x] Replies
 - [ ] Typing indicators
 
 ## Installation
