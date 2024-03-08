@@ -146,30 +146,34 @@ class UnderOrganizationRoom(Room):
                 link.replace_with(zulip_mention)
 
             if reply_to is not None:
-                reply_block = soup.find("mx-reply")
-                if reply_block is not None:
-                    links = reply_block.find_all("a")
-                    if type(self).__name__ in (
-                        "DirectRoom",
-                        "StreamRoom",
-                    ):
-                        # Replace reply event link with Zulip link
-                        in_reply_to_link = links[0]
-                        narrow = self._construct_zulip_narrow_url(
-                            topic=topic,
-                            message_id=self.messages.inv.get(reply_to.event_id),
-                        )
-                        in_reply_to_link["href"] = narrow
+                # Attempt to parse reply, it's alright if this fails
+                try:
+                    reply_block = soup.find("mx-reply")
+                    if reply_block is not None:
+                        links = reply_block.find_all("a")
+                        if type(self).__name__ in (
+                            "DirectRoom",
+                            "StreamRoom",
+                        ):
+                            # Replace reply event link with Zulip link
+                            in_reply_to_link = links[0]
+                            narrow = self._construct_zulip_narrow_url(
+                                topic=topic,
+                                message_id=self.messages.inv.get(reply_to.event_id),
+                            )
+                            in_reply_to_link["href"] = narrow
 
-                    # Replace mxid with display name (non-puppet users)
-                    if len(links) > 1:
-                        author_link = links[1]
-                        author_mxid = author_link["href"].split("https://matrix.to/#/")[
-                            1
-                        ]
-                        author_link.string.replace_with(
-                            self._get_displayname(author_mxid)
-                        )
+                        # Replace mxid with display name (non-puppet users)
+                        if len(links) > 1:
+                            author_link = links[1]
+                            author_mxid = author_link["href"].split(
+                                "https://matrix.to/#/"
+                            )[1]
+                            author_link.string.replace_with(
+                                self._get_displayname(author_mxid)
+                            )
+                except Exception:  # pylint: disable=broad-exception-caught
+                    pass
 
             message = soup.encode(formatter="html5")
 
