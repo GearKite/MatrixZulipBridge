@@ -304,6 +304,14 @@ class Room(ABC):
                         "event_id": self.thread_last_message[thread_id]
                     }
 
+            if bridge_data.get("reply_to") is not None:
+                if "m.relates_to" not in event["content"]:
+                    event["content"]["m.relates_to"] = {}
+                event["content"]["m.relates_to"]["is_falling_back"] = False
+                event["content"]["m.relates_to"]["m.in_reply_to"] = {
+                    "event_id": bridge_data.get("reply_to")
+                }
+
             intent = (
                 self.az.intent.user(event["user_id"])
                 if event["user_id"]
@@ -339,7 +347,7 @@ class Room(ABC):
             )
             if (
                 "m.relates_to" in event["content"]
-                and event["content"]["m.relates_to"]["rel_type"] == "m.thread"
+                and event["content"]["m.relates_to"].get("rel_type") == "m.thread"
             ):
                 self.thread_last_message[
                     event["content"]["m.relates_to"]["event_id"]

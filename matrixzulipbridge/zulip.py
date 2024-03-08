@@ -22,6 +22,7 @@
 #
 #
 import logging
+import re
 from typing import TYPE_CHECKING, Optional
 from urllib.parse import urljoin
 
@@ -96,7 +97,9 @@ class ZulipEventHandler:
             self.organization, event["sender_id"]
         )
 
-        message, formatted_message = self._process_message_content(event["content"])
+        message, formatted_message, reply_event_id = self._process_message_content(
+            event["content"], room
+        )
 
         custom_data = {
             "zulip_topic": topic,
@@ -106,6 +109,7 @@ class ZulipEventHandler:
             "type": "message",
             "timestamp": event["timestamp"],
             "target": "stream",
+            "reply_to": reply_event_id,
         }
 
         room.send_message(
@@ -135,7 +139,9 @@ class ZulipEventHandler:
         if str(event["id"]) in room.messages:
             return
 
-        message, formatted_message = self._process_message_content(event["content"])
+        message, formatted_message, reply_event_id = self._process_message_content(
+            event["content"], room
+        )
 
         custom_data = {
             "zulip_user_id": event["sender_id"],
@@ -144,6 +150,7 @@ class ZulipEventHandler:
             "type": "message",
             "timestamp": event["timestamp"],
             "target": "direct",
+            "reply_to": reply_event_id,
         }
 
         room.send_message(
@@ -285,7 +292,9 @@ class ZulipEventHandler:
                 return room
         return None
 
-    def _process_message_content(self, html: str):
+    def _process_message_content(self, html: str, room: "DirectRoom"):
+        reply_event_id = None
+
         # Replace Zulip file upload relative URLs with absolute
         soup = BeautifulSoup(html, "html.parser")
         for a_tag in soup.find_all("a"):
@@ -293,6 +302,63 @@ class ZulipEventHandler:
             absolute_url = urljoin(self.organization.server["realm_uri"], href)
             a_tag["href"] = absolute_url
 
+        # Check if message contains a reply
+        first_text = soup.find("p")
+        mentioned_user = first_text.select("span.user-mention.silent")
+        narrow_link = first_text.find("a")
+        quote = soup.find("blockquote")
+        if (
+            len(mentioned_user) == 1
+            and narrow_link is not None
+            and narrow_link.get("href") is not None
+            and quote is not None
+            and "#narrow" in narrow_link.get("href", "")
+        ):
+            # Parse reply (crudely?)
+            message_id = re.match(r".*\/near\/(\d+)(\/|$)", narrow_link.get("href"))[1]
+            reply_event_id = room.messages.get(message_id)
+
+            # Create rich reply fallback
+            if reply_event_id is not None:
+                mentioned_zulip_id = mentioned_user[0]["data-user-id"]
+                mentioned_user_mxid = self.organization.zulip_puppet_user_mxid.get(
+                    mentioned_zulip_id
+                )
+                if mentioned_user_mxid is None:
+                    mentioned_user_mxid = (
+                        self.organization.serv.get_mxid_from_zulip_user_id(
+                            self.organization, mentioned_zulip_id
+                        )
+                    )
+
+                quote.extract()
+
+                # Fromat reply
+                mx_reply = soup.new_tag("mx-reply")
+                mx_reply_quote = soup.new_tag("blockquote")
+
+                mx_reply_event = soup.new_tag(
+                    "a",
+                    href=f"https://matrix.to/#/{room.id}/{reply_event_id}",
+                )
+                mx_reply_event.append(soup.new_string("In reply to"))
+
+                mx_reply_author = soup.new_tag(
+                    "a", href=f"https://matrix.to/#/{mentioned_user_mxid}"
+                )
+                mx_reply_author.append(soup.new_string(mentioned_user_mxid))
+
+                mx_reply_quote.append(mx_reply_event)
+                mx_reply_quote.append(mx_reply_author)
+                mx_reply_quote.append(soup.new_tag("br"))
+
+                for child in quote.findChildren():
+                    mx_reply_quote.append(child)
+
+                mx_reply.append(mx_reply_quote)
+
+                first_text.replace_with(mx_reply)
+
         formatted_message = emoji.emojize(soup.decode(), language="alias")
         message = markdownify(formatted_message).rstrip()
-        return message, formatted_message
+        return message, formatted_message, reply_event_id
