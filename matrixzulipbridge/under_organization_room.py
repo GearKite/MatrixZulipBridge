@@ -196,7 +196,11 @@ class UnderOrganizationRoom(Room):
         narrow = base_url + "/#narrow"
 
         if type(self).__name__ == "DirectRoom":
-            narrow += f"/dm/{','.join(self.recipient_ids)}"
+            recipients_string = ""
+            for recipient in set(self.recipient_ids):
+                recipients_string += str(recipient) + ","
+            recipients_string = recipients_string[:-1]
+            narrow += f"/dm/{recipients_string}"
         elif type(self).__name__ == "StreamRoom":
             narrow += f"/stream/{self.stream_id}"
 
