@@ -23,10 +23,10 @@ zulip-emoji-mapping = "^1.0.1"
 beautifulsoup4 = "^4.6.2"
 
 [tool.poetry.group.dev.dependencies]
-black = "^23"
+black = "^24"
 pylint = "^3"
 isort = "^5.13"
-pre-commit = "^3.6"
+pre-commit = "^3.7"
 pytest = ">=7, <9"
 pytest-cov = "^4"
 
