@@ -86,6 +86,7 @@ class Room(ABC):
         self.thread_last_message = {}
         self.threads = bidict()
         self.send_read_receipt = True
+        self.encryption_notice_sent = False
 
         self._mx_handlers = {}
         self._queue = EventQueue(self._flush_events)
@@ -96,6 +97,7 @@ class Room(ABC):
 
         # we track room members
         self.mx_register("m.room.member", self._on_mx_room_member)
+        self.mx_register("m.room.encrypted", self._on_mx_encrypted)
 
         self.init()
 
@@ -160,6 +162,16 @@ class Room(ABC):
 
     async def _on_mx_unhandled_event(self, event: "Event") -> None:
         pass
+
+    async def _on_mx_encrypted(self, event: "Event") -> None:
+        if event.sender == self.serv.user_id or self.encryption_notice_sent:
+            return
+
+        self.encryption_notice_sent = True
+        self.send_notice(
+            "This bridge cannot read encrypted Matrix messages. "
+            "Disable encryption in this room or open a new unencrypted control room."
+        )
 
     async def _on_mx_room_member(self, event: "StateEvent") -> None:
         if (

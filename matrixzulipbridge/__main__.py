@@ -829,9 +829,11 @@ class BridgeAppService(AppService):
         if self.config["owner"] and not owner_control_open:
             logging.info(f"Opening control room for owner {self.config['owner']}")
             try:
-                room_id = await self.az.intent.create_room(
-                    invitees=[self.config["owner"]],
-                    custom_request_fields={"com.beeper.auto_join_invites": True},
+                room_id = await self.create_room(
+                    "Zulip bridge control",
+                    "Control room for the Zulip bridge",
+                    [self.config["owner"]],
+                    is_direct=True,
                 )
 
                 room = ControlRoom(
